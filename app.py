@@ -45,7 +45,11 @@ if st.session_state.run:
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+    
+    # [위장술 강화] 진짜 사람 브라우저처럼 보이게 하는 설정
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
     
     chrome_path = shutil.which("chromium") or shutil.which("chromium-browser")
     if chrome_path:
@@ -53,35 +57,43 @@ if st.session_state.run:
 
     try:
         driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 20)
+        # 봇 감지 우회 스크립트 실행
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                })
+            """
+        })
+        
+        wait = WebDriverWait(driver, 30) # 대기 시간을 30초로 대폭 늘림
         
         while st.session_state.run:
-            status("🌐 사이트 접속 중... (모든 장애물 제거 중)")
+            status("🌐 사이트 보안 확인 및 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             
-            # [핵심] 사이트 뜨자마자 모든 Alert 팝업 반복해서 닫기
-            for _ in range(10):
-                try:
-                    driver.switch_to.alert.accept()
-                    status("⚠️ 방해되는 알림창을 닫았습니다.")
-                    time.sleep(0.5)
-                except:
-                    break # 더 이상 뜰 팝업이 없으면 탈출
-
-            # 1. 달력 iframe 확인 및 진입 (절대 대기 모드)
-            status("📥 달력 프레임 로딩 대기 중...")
+            # 1. 팝업 철저 제거
+            time.sleep(5)
             try:
-                # iframe이 로딩될 때까지 더 끈질기게 기다림
+                for _ in range(5):
+                    driver.switch_to.alert.accept()
+                    status("⚠️ 알림창을 닫았습니다.")
+                    time.sleep(0.5)
+            except: pass
+
+            # 2. 달력 iframe 진입 시도 (더 끈질기게)
+            status("📥 달력 데이터를 불러오는 중 (최대 30초 대기)...")
+            try:
+                # iframe이 나타날 때까지 30초간 뚫어지게 쳐다봅니다.
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
                 driver.switch_to.frame(0)
-                status("✅ 달력 시스템 진입 성공!")
+                status("✅ 달력 데이터 로딩 성공!")
             except:
-                status("❌ 달력을 찾지 못했습니다. 다시 접속합니다.")
+                status("❌ 달력 로딩 실패. 사이트 응답이 느립니다. 재시도...")
                 driver.refresh()
-                time.sleep(5)
                 continue
 
-            # 2. 구역 선택
+            # 3. 달빛야영장 구역 선택
             try:
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='radio']")))
                 rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
@@ -92,20 +104,19 @@ if st.session_state.run:
                         break
             except: pass
 
-            # 3. 진짜 날짜 클릭 (뒤에서부터 찾기 - 회색 날짜 방지)
-            status(f"📅 {target_date}일 진짜 버튼 타격 중...")
+            # 4. 진짜 날짜 클릭 (지난달 회색 날짜 방지)
+            status(f"📅 {target_date}일 날짜 확정 중...")
             date_btns = driver.find_elements(By.XPATH, f"//a[text()='{target_date}']")
             
             if date_btns:
                 success_click = False
-                # 뒤에서부터 누르는 이유: 달력 이미지 상 검은색(진짜) 날짜가 리스트 뒤쪽에 위치함
-                for btn in reversed(date_btns):
+                for btn in reversed(date_btns): # 뒤에서부터 클릭 (진짜 날짜 우선)
                     try:
                         driver.execute_script("arguments[0].click();", btn)
-                        time.sleep(2)
+                        time.sleep(3)
                         try:
                             alert = driver.switch_to.alert
-                            alert.accept() # 지난달(회색)이면 팝업 닫고 다음 버튼으로
+                            alert.accept() # 지난달 날짜면 닫고 다음 후보로
                             continue
                         except:
                             success_click = True
@@ -114,7 +125,8 @@ if st.session_state.run:
                     except: continue
 
                 if success_click:
-                    # 4. 빈자리 확인
+                    # 5. 빈자리 데이터 추출
+                    status("🔍 실시간 빈자리 확인 중...")
                     rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
                     available_sites = []
                     for row in rows:
@@ -127,7 +139,7 @@ if st.session_state.run:
                     if available_sites:
                         available_sites = sorted(list(set(available_sites)))
                         site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                        msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ {len(available_sites)}개 구역\n---\n{site_list_str}"
+                        msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ {len(available_sites)}개 가능\n---\n{site_list_str}"
                         send_telegram_msg(msg)
                         st.balloons()
                         st.session_state.run = False
@@ -135,12 +147,12 @@ if st.session_state.run:
                     else:
                         status(f"😴 {target_date}일 아직 빈자리가 없네요.")
             
-            status("🔄 다음 감시까지 1분 대기 중...")
+            status("🔄 다음 확인을 위해 1분간 대기합니다.")
             time.sleep(60)
             driver.refresh()
 
     except Exception as e:
-        status(f"⚠️ 에러: {e}")
+        status(f"⚠️ 시스템 오류: {e}")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
