@@ -41,7 +41,7 @@ with col2:
 log_area = st.empty()
 
 if st.session_state.run:
-    log_area.info(f"🔄 {target_date}일 정밀 데이터 수집 중...")
+    log_area.info(f"🔄 {target_date}일 로그인 및 팝업 대응 중...")
     
     options = Options()
     options.add_argument("--headless")
@@ -58,34 +58,50 @@ if st.session_state.run:
         while st.session_state.run:
             driver.get("https://camping.ulju.ulsan.kr/index.jsp")
             time.sleep(3)
-            # 모든 팝업 닫기
+            
+            # 초기 팝업 모두 제거
             try:
                 while True:
                     driver.switch_to.alert.accept()
                     time.sleep(0.5)
             except: pass
 
-            # 로그인 로직
+            # 로그인 로직 강화
             try:
                 login_btn = driver.find_elements(By.PARTIAL_LINK_TEXT, "로그인")
                 if login_btn:
                     login_btn[0].click()
                     time.sleep(2)
+                    
                     inputs = driver.find_elements(By.CLASS_NAME, "inputLogin")
                     if len(inputs) >= 2:
                         inputs[0].send_keys("athdream")
                         inputs[1].send_keys("!raul3011o")
                         inputs[1].send_keys(Keys.ENTER)
-                        time.sleep(2)
+                        time.sleep(3) # 로그인 처리 대기
+                        
+                        # [핵심 수정] "정상 로그인되었습니다" 알림창 무한 확인 및 제거
+                        try:
+                            while True:
+                                driver.switch_to.alert.accept()
+                                time.sleep(0.5)
+                        except: pass
             except: pass
 
             # 예약 페이지 이동
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             time.sleep(4)
+            # 이동 후에도 팝업이 뜨는지 최종 확인
+            try:
+                while True:
+                    driver.switch_to.alert.accept()
+                    time.sleep(0.5)
+            except: pass
+            
             if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 driver.switch_to.frame(0)
 
-            # 달빛 야영장 클릭
+            # 야영장 선택 (달빛)
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
                 if "달빛" in rb.find_element(By.XPATH, "./..").text:
@@ -99,26 +115,23 @@ if st.session_state.run:
                 driver.execute_script("arguments[0].click();", dates[-1])
                 time.sleep(3)
                 
-                # --- [수정] 정밀 구역 추출 로직 ---
+                # 구역 추출
                 available_sites = []
-                # '신청'이라는 글자가 포함된 행(tr)을 가져옵니다.
                 rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
                 
                 for row in rows:
                     cells = row.find_elements(By.TAG_NAME, "td")
                     if len(cells) >= 3:
-                        # '접수중'이나 야영장 이름이 아닌, '달빛'이 포함된 실제 구역명을 찾습니다.
+                        # '달빛' 명칭이 포함된 칸을 찾아 상세 명칭 추출
                         temp_list = [c.text.strip() for c in cells if "달빛" in c.text and "야영장" not in c.text]
                         if temp_list:
                             available_sites.append(temp_list[0])
                         else:
-                            # 만약 위 조건에 안 걸리면 3번째 칸을 일단 가져오되 '접수중'은 제외
                             name = cells[2].text.strip()
                             if name and "접수" not in name:
                                 available_sites.append(name)
                 
                 if available_sites:
-                    # 중복 제거 및 깔끔하게 정리
                     available_sites = sorted(list(set(available_sites)))
                     site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
                     
@@ -134,12 +147,17 @@ if st.session_state.run:
                     st.session_state.run = False
                     break
             
-            log_area.write(f"[{datetime.now().strftime('%H:%M:%S')}] {target_date}일 체크 중...")
+            log_area.write(f"[{datetime.now().strftime('%H:%M:%S')}] {target_date}일 감시 중... 이상 없음")
             time.sleep(60)
             driver.refresh()
 
     except Exception as e:
-        st.error(f"⚠️ 오류: {e}")
-        st.session_state.run = False
+        # 알림창 때문에 발생하는 에러를 한 번 더 걸러줌
+        if "unexpected alert open" in str(e):
+            try: driver.switch_to.alert.accept()
+            except: pass
+        else:
+            st.error(f"⚠️ 오류: {e}")
+            st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
