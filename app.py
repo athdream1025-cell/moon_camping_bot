@@ -31,6 +31,9 @@ if st.button("🚀 감시 시작"):
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")  # 추가
+    # 서버 환경에 따라 크롬 경로를 강제로 지정 (필요 시)
+    options.binary_location = "/usr/bin/chromium-browser"
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     
