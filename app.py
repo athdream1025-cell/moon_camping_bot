@@ -3,11 +3,10 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.keys import Keys
 import time
 import requests
-import shutil # 추가
+import shutil
 
 # [설정] 안태희 님 정보
 TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48VpvQv68jgoJzSGY"
@@ -47,24 +46,67 @@ if st.session_state.run:
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     
-    # 서버에 설치된 크롬 경로 자동 찾기
-    chrome_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    # 서버에 설치된 크롬 경로 찾기
+    chrome_path = shutil.which("chromium") or shutil.which("chromium-browser")
     if chrome_path:
         options.binary_location = chrome_path
 
     try:
-        # webdriver-manager가 드라이버를 자동으로 맞춤
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # webdriver-manager 대신 셀레니움 4.x의 기본 드라이버 매니저 사용
+        driver = webdriver.Chrome(options=options)
         
         while st.session_state.run:
             driver.get("https://camping.ulju.ulsan.kr/index.jsp")
             time.sleep(3)
             
-            # 로그인 및 체크 로직 (기존과 동일)
-            # ... 생략 (안태희 님이 가진 기존 로그인 로직 그대로 사용) ...
+            # --- 로그인 로직 ---
+            try:
+                driver.find_element(By.PARTIAL_LINK_TEXT, "로그인").click()
+                time.sleep(3)
+                login_inputs = driver.find_elements(By.CLASS_NAME, "inputLogin")
+                if len(login_inputs) >= 2:
+                    login_inputs[0].send_keys("athdream")
+                    login_inputs[1].send_keys("!raul3011o")
+                    login_inputs[1].send_keys(Keys.ENTER)
+                    time.sleep(3)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
+            except: pass
+
+            # --- 예약 확인 로직 ---
+            driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
+            time.sleep(5)
+            if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                driver.switch_to.frame(0)
+
+            # 야영장(달빛) 선택
+            rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            for rb in rbs:
+                if "달빛" in rb.find_element(By.XPATH, "./..").text:
+                    driver.execute_script("arguments[0].click();", rb)
+                    time.sleep(2)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
+                    break
+
+            # 날짜 선택 및 신청 버튼 체크
+            dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
+            if dates:
+                driver.execute_script("arguments[0].click();", dates[-1])
+                time.sleep(3)
+                
+                apply_btns = driver.find_elements(By.XPATH, "//*[contains(text(), '신청')]")
+                active_list = [b for b in apply_btns if b.is_displayed()]
+                
+                if active_list:
+                    msg = f"🔔 [빈자리!] {target_date}일 예약 가능! 지금 바로 접속하세요!"
+                    send_telegram_msg(msg)
+                    st.balloons()
+                    log_area.success(msg)
+                    st.session_state.run = False
+                    break
             
-            # 테스트용 로그
-            log_area.write(f"[{time.strftime('%H:%M:%S')}] {target_date}일 체크 중...")
+            log_area.write(f"[{time.strftime('%H:%M:%S')}] {target_date}일 체크 중... 빈자리 없음")
             time.sleep(60)
             driver.refresh()
 
