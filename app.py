@@ -2,6 +2,8 @@ import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
 import shutil
@@ -48,82 +50,92 @@ if st.session_state.run:
 
     try:
         driver = webdriver.Chrome(options=options)
+        wait = WebDriverWait(driver, 15) # 최대 15초까지 기다리는 타이머
         
         while st.session_state.run:
-            log_area.info("🌐 사이트 접속 및 환경 설정 중...")
+            log_area.info("🌐 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             time.sleep(5)
             
-            # 모든 초기 팝업 강제 제거
+            # 모든 팝업 무조건 제거
             try:
-                for _ in range(5):
+                for _ in range(3):
                     driver.switch_to.alert.accept()
                     time.sleep(0.5)
             except: pass
 
-            if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
-                driver.switch_to.frame(0)
+            # 1. 달력 iframe 확인 및 진입
+            try:
+                wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
+                log_area.info("📥 달력 시스템 진입 성공")
+            except:
+                log_area.error("❌ 달력을 불러오지 못했습니다. 재시도 중...")
+                driver.refresh()
+                continue
 
-            # 달빛야영장 선택
-            rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
-            for rb in rbs:
-                if "달빛" in rb.find_element(By.XPATH, "./..").text:
-                    driver.execute_script("arguments[0].click();", rb)
-                    time.sleep(2)
-                    break
-
-            # --- [핵심 수정] 날짜 선택 로직 강화 ---
-            log_area.info(f"📅 {target_date}일 버튼을 정밀하게 찾는 중...")
-            
-            # 1. 'a' 태그 중에서 텍스트가 target_date와 정확히 일치하는 것들을 모두 찾음
-            all_dates = driver.find_elements(By.XPATH, f"//a[text()='{target_date}']")
-            
-            clicked = False
-            for date_btn in all_dates:
-                # 2. 버튼의 부모나 주변 요소에 '지난 날짜'를 뜻하는 클래스가 있는지 체크 (사이트마다 다름)
-                # 여기서는 '미래 날짜'여서 클릭 가능한 버튼인지 시도해보고 팝업이 뜨면 다음 버튼으로 넘깁니다.
-                try:
-                    driver.execute_script("arguments[0].click();", date_btn)
-                    time.sleep(2)
-                    
-                    # 클릭 직후 팝업이 뜨는지 확인
-                    try:
-                        alert = driver.switch_to.alert
-                        log_area.warning(f"⚠️ 무시된 버튼: {alert.text}")
-                        alert.accept() # 지난 날짜 팝업이면 닫고 다음 버튼 시도
-                        continue 
-                    except:
-                        # 팝업이 안 떴다면 정상적으로 날짜가 선택된 것!
-                        clicked = True
-                        log_area.success(f"✅ {target_date}일 선택 성공!")
+            # 2. 달빛야영장 라디오 버튼 클릭
+            try:
+                # 라디오 버튼이 나타날 때까지 대기
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='radio']")))
+                rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+                for rb in rbs:
+                    if "달빛" in rb.find_element(By.XPATH, "./..").text:
+                        driver.execute_script("arguments[0].click();", rb)
+                        time.sleep(2)
                         break
-                except:
-                    continue
+            except: pass
 
-            if clicked:
-                # 3. 빈자리 데이터 추출
-                available_sites = []
-                rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
+            # 3. 날짜 클릭 (정밀 타격 및 대기)
+            log_area.info(f"📅 {target_date}일 버튼이 뜰 때까지 기다리는 중...")
+            try:
+                # 29일이라는 글자가 있는 버튼이 뜰 때까지 대기
+                date_xpath = f"//a[text()='{target_date}']"
+                wait.until(EC.element_to_be_clickable((By.XPATH, date_xpath)))
                 
-                for row in rows:
-                    cells = row.find_elements(By.TAG_NAME, "td")
-                    if len(cells) >= 3:
-                        name = next((c.text.strip() for c in cells if "달빛" in c.text and "야영장" not in c.text), cells[2].text.strip())
-                        if name and "접수" not in name:
-                            available_sites.append(name)
+                all_dates = driver.find_elements(By.XPATH, date_xpath)
                 
-                if available_sites:
-                    available_sites = sorted(list(set(available_sites)))
-                    site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                    msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ {len(available_sites)}개 가능\n---\n{site_list_str}"
-                    send_telegram_msg(msg)
-                    st.balloons()
-                    st.session_state.run = False
-                    break
+                clicked = False
+                for date_btn in all_dates:
+                    try:
+                        driver.execute_script("arguments[0].click();", date_btn)
+                        time.sleep(2)
+                        # 클릭 후 '지난 날짜' 팝업 뜨면 닫기
+                        try:
+                            alert = driver.switch_to.alert
+                            alert.accept()
+                            continue 
+                        except:
+                            clicked = True
+                            log_area.success(f"✅ {target_date}일 선택 성공!")
+                            break
+                    except: continue
+
+                if clicked:
+                    # 4. 빈자리 데이터 추출
+                    rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
+                    available_sites = []
+                    for row in rows:
+                        cells = row.find_elements(By.TAG_NAME, "td")
+                        if len(cells) >= 3:
+                            name = next((c.text.strip() for c in cells if "달빛" in c.text and "야영장" not in c.text), cells[2].text.strip())
+                            if name and "접수" not in name:
+                                available_sites.append(name)
+                    
+                    if available_sites:
+                        available_sites = sorted(list(set(available_sites)))
+                        site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
+                        msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ {len(available_sites)}개 가능\n---\n{site_list_str}"
+                        send_telegram_msg(msg)
+                        st.balloons()
+                        st.session_state.run = False
+                        break
+                    else:
+                        log_area.write(f"[{datetime.now().strftime('%H:%M:%S')}] {target_date}일 빈자리 없음")
                 else:
-                    log_area.write(f"[{datetime.now().strftime('%H:%M:%S')}] {target_date}일 빈자리 없음")
-            else:
-                log_area.error(f"❌ {target_date}일을 클릭할 수 없습니다. (날짜 확인 필요)")
+                    log_area.warning(f"⚠️ {target_date}일 버튼 클릭에 실패했습니다.")
+
+            except Exception as e:
+                log_area.error(f"❌ 날짜 버튼을 찾을 수 없습니다: {e}")
             
             time.sleep(60)
             driver.refresh()
