@@ -58,53 +58,65 @@ if st.session_state.run:
 
     try:
         driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 10) # 대기 시간을 효율적으로 단축
         
         while st.session_state.run:
             status("🌐 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
+            time.sleep(5)
             
-            # 1. [유연한 팝업 처리] 있으면 닫고, 없으면 바로 통과
+            # 1. 팝업 즉시 처리
             try:
-                # 2초만 딱 기다려보고 팝업 있으면 확인 클릭
-                WebDriverWait(driver, 2).until(EC.alert_is_present())
-                while True:
-                    alert = driver.switch_to.alert
-                    alert.accept()
-                    time.sleep(0.3)
-            except:
-                status("ℹ️ 현재는 팝업창이 없습니다. 바로 진행합니다.")
+                alert = driver.switch_to.alert
+                alert.accept()
+                status("ℹ️ 팝업을 닫았습니다.")
+            except: pass
 
-            # 2. [입구 돌파] iframe 진입 강화
-            status("📥 달력 시스템 진입 시도...")
-            try:
-                # iframe이 나타날 때까지 최대 10초 대기 후 즉시 전환
-                wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
-                status("✅ 달력 내부 진입 성공!")
-            except:
-                status("❌ 입구 진입 실패. 다시 시도합니다.")
+            # 2. [핵심 전략 수정] 모든 프레임을 하나씩 다 뒤져서 '달빛' 찾기
+            status("🔍 달력 시스템 수색 중...")
+            found_door = False
+            
+            # 메인 페이지에서 먼저 찾아보기
+            if "달빛" in driver.page_source:
+                status("✅ 메인 페이지에서 직접 발견!")
+                found_door = True
+            else:
+                # iframe들을 하나씩 들어가보며 수색
+                iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                for i in range(len(iframes)):
+                    driver.switch_to.default_content()
+                    try:
+                        driver.switch_to.frame(i)
+                        if "달빛" in driver.page_source:
+                            status(f"✅ {i+1}번 프레임 안에서 달력 발견!")
+                            found_door = True
+                            break
+                    except: continue
+
+            if not found_door:
+                status("❌ 여전히 입구를 못 찾았습니다. 재시도 중...")
                 driver.refresh()
+                time.sleep(3)
                 continue
 
-            # 3. 어제 성공했던 14개 추출 로직 시작
+            # 3. 구역 및 날짜 선택 (어제 성공한 그 로직)
             try:
-                # 구역 선택 (달빛)
-                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='radio']")))
+                # 달빛야영장 라디오 버튼
                 rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
                 for rb in rbs:
-                    if "달빛" in rb.find_element(By.XPATH, "./..").text:
+                    parent_text = rb.find_element(By.XPATH, "./..").text
+                    if "달빛" in parent_text:
                         driver.execute_script("arguments[0].click();", rb)
-                        time.sleep(1)
+                        time.sleep(2)
                         break
 
-                # 날짜 선택
                 status(f"📅 {target_date}일 선택 시도...")
+                # 날짜 버튼 클릭 (p.day 혹은 span 등 모든 텍스트 기반 탐색)
                 date_btns = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
                 if date_btns:
                     driver.execute_script("arguments[0].click();", date_btns[-1])
-                    time.sleep(2)
+                    time.sleep(3)
                     
-                    # 4. 빈자리 추출 (어제 성공 로직)
+                    # 4. 빈자리 추출 (어제 성공 로직 복원)
                     rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
                     available_sites = []
                     for row in rows:
@@ -124,13 +136,14 @@ if st.session_state.run:
                         break
                     else:
                         status(f"😴 {target_date}일 빈자리 없음")
-            except: pass
+            except Exception as e:
+                status(f"⚠️ 내부 탐색 중 오류: {e}")
 
             time.sleep(60)
             driver.refresh()
 
     except Exception as e:
-        status(f"⚠️ 에러: {e}")
+        status(f"⚠️ 시스템 에러: {e}")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
