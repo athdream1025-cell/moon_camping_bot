@@ -2,8 +2,6 @@ import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
 import shutil
@@ -13,24 +11,24 @@ from datetime import datetime
 # [환경 설정]
 os.environ['TZ'] = 'Asia/Seoul'
 
-# [설정] 텔레그램 정보
-TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48Vpv (나머지 토큰)"
+# [설정] 안태희 님 텔레그램 정보
+TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48VpvQv68jgoJzSGY"
 CHAT_ID = "529787781"
 
 def status(msg):
     log_area.info(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-st.set_page_config(page_title="울주 캠핑 정밀 침투", page_icon="🎯")
-st.title("🎯 울주 캠핑 경로 재정비 모드")
+st.set_page_config(page_title="29일 강제 돌파", page_icon="⚡")
+st.title("⚡ 29일 예약판 강제 기동 모드")
 
-target_date = st.text_input("감시 날짜", value="29")
+target_date = st.text_input("감시 날짜 (예: 29)", value="29")
 
 if "run" not in st.session_state:
     st.session_state.run = False
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("🚀 감시 시작"):
+    if st.button("🚀 강제 기동 시작"):
         st.session_state.run = True
 with col2:
     if st.button("🛑 중단"):
@@ -54,52 +52,68 @@ if st.session_state.run:
         driver = webdriver.Chrome(options=options)
         
         while st.session_state.run:
-            status("🌐 사이트 접속 시도...")
+            status("🌐 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
+            time.sleep(10)
             
-            # 페이지가 안정화될 때까지 대기 (최대 20초)
-            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            time.sleep(5)
-            
-            # [수정] 강제 진입 전 현재 화면 캡쳐 (진단용)
-            driver.save_screenshot("check.png")
-            image_area.image("check.png", caption="진입 시도 전 메인 화면")
+            # [단계 1] 예약 페이지 강제 진입
+            driver.execute_script("fn_move_page('01');") 
+            time.sleep(8)
 
-            try:
-                status("🔑 강제 진입 스크립트 가동...")
-                driver.execute_script("fn_move_page('01');") 
-                time.sleep(10) # 예약창 생성 대기 시간 대폭 늘림
-            except: pass
-
-            # [수정] iframe 탐색 로직 강화
-            status("🔍 예약창(iframe) 내부 수색 중...")
+            # [단계 2] iframe 진입
             found_frame = False
-            for _ in range(5):
+            for i in range(10):
                 iframes = driver.find_elements(By.TAG_NAME, "iframe")
-                for i in range(len(iframes)):
+                for idx, frame in enumerate(iframes):
                     driver.switch_to.default_content()
                     try:
-                        driver.switch_to.frame(i)
+                        driver.switch_to.frame(idx)
                         if "달빛" in driver.page_source:
-                            status(f"✅ {i+1}번 통로 진입 성공!")
                             found_frame = True; break
                     except: continue
                 if found_frame: break
-                time.sleep(3)
+                time.sleep(2)
 
             if not found_frame:
-                status("❌ 입구 발견 실패. 다시 접속합니다.")
+                status("❌ 입구 발견 실패. 재시도합니다.")
                 driver.refresh()
                 continue
 
-            # [날짜 선택 로직은 이전과 동일하게 유지]
-            # (이번 달 29일 정밀 타격 코드 삽입)
-            
+            # [단계 3] 구역 선택 및 29일 데이터 강제 호출
+            try:
+                status("🔘 '달빛야영장' 구역 고정 중...")
+                # 달빛야영장 라디오 버튼 강제 클릭
+                driver.execute_script("document.getElementById('site_gubun_01').click();")
+                time.sleep(3)
+
+                # [핵심] 29일 클릭 대신, 날짜 데이터 불러오기 함수 직접 실행
+                status(f"⚡ {target_date}일 예약 데이터 강제 호출 중...")
+                # 사이트 내부 날짜 클릭 함수인 'fn_click_date'를 직접 때려 넣습니다.
+                # 2026년 5월 29일 기준 명령 (날짜 형식에 맞춰 자동 생성)
+                script_cmd = f"fn_click_date('2026-05-{target_date}');"
+                driver.execute_script(script_cmd)
+                
+                status(f"✅ {target_date}일 데이터 요청 완료. 로딩 대기(15초)...")
+                time.sleep(15)
+                
+                # 확인용 스크린샷
+                driver.save_screenshot("final_report.png")
+                image_area.image("final_report.png", caption=f"{target_date}일 강제 호출 결과")
+                
+                if "신청" in driver.page_source:
+                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 [대박] {target_date}일 빈자리 강제 포착!")
+                    st.balloons()
+                else:
+                    status(f"😴 {target_date}일 현재 자리가 없습니다.")
+
+            except Exception as e:
+                status(f"⚠️ 내부 가동 오류: {e}")
+
             time.sleep(180) 
             driver.refresh()
 
     except Exception as e:
-        status(f"⚠️ 시스템 오류: {e}")
+        status(f"⚠️ 시스템 다운: {e}")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
