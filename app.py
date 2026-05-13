@@ -8,7 +8,7 @@ import shutil
 import os
 from datetime import datetime
 
-# [환경 설정] 서버 시간대 서울 맞춤
+# [환경 설정]
 os.environ['TZ'] = 'Asia/Seoul'
 
 # [설정] 안태희 님 텔레그램 연동 정보
@@ -22,9 +22,8 @@ def send_telegram_msg(message):
     except: pass
 
 st.set_page_config(page_title="울주 캠핑 비서 Pro", page_icon="🏕️")
-st.title("🏕️ 울주 캠핑 최종 정밀 감시")
+st.title("🏕️ 울주 캠핑 필승 감시 모드")
 
-# 감시할 날짜 입력
 target_date = st.text_input("감시할 날짜 입력 (예: 29)", value="29")
 
 if "run" not in st.session_state:
@@ -32,9 +31,9 @@ if "run" not in st.session_state:
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("🚀 최종 감시 시작"):
+    if st.button("🚀 감시 시작 (필승)"):
         st.session_state.run = True
-        send_telegram_msg(f"🚨 [정밀 감시] {target_date}일 달빛야영장 추적을 시작합니다.") 
+        send_telegram_msg(f"🚨 [최종병기 가동] {target_date}일 달빛야영장 추적을 시작합니다.") 
 with col2:
     if st.button("🛑 정지"):
         st.session_state.run = False
@@ -51,6 +50,7 @@ if st.session_state.run:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,2000")
+    # 사람처럼 보이게 하는 속성 추가
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     
     chrome_path = shutil.which("chromium") or shutil.which("chromium-browser")
@@ -60,38 +60,36 @@ if st.session_state.run:
         driver = webdriver.Chrome(options=options)
         
         while st.session_state.run:
-            status("🌐 사이트 접속 중...")
+            status("🌐 캠핑장 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
-            time.sleep(8)
+            time.sleep(10) # 초기 로딩 대기 강화
             
-            # 1. 예약 시스템(iframe) 진입 강화 로직
-            status("🔍 예약 시스템(iframe) 탐색 중... (최대 30초 대기)")
+            # 1. 예약 시스템(iframe) 진입 - 끈기 있게 1분간 찾기
+            status("🔍 예약 시스템 문 두드리는 중... (최대 1분 대기)")
             found_frame = False
-            for attempt in range(6): # 5초씩 6번 = 총 30초 대기
+            for attempt in range(12): # 5초씩 12번 = 60초
                 iframes = driver.find_elements(By.TAG_NAME, "iframe")
                 for i in range(len(iframes)):
                     driver.switch_to.default_content()
                     try:
                         driver.switch_to.frame(i)
-                        # '달빛'이나 '일정' 텍스트가 있으면 성공으로 간주
                         if "달빛" in driver.page_source or "일정" in driver.page_source:
-                            status(f"✅ 예약 시스템 진입 성공")
+                            status(f"✅ 입구 진입 성공! ({i+1}번 통로)")
                             found_frame = True
                             break
                     except: continue
-                
                 if found_frame: break
-                status(f"⏳ 시스템 응답 대기 중... ({attempt+1}/6)")
+                status(f"⏳ 시스템 응답 기다리는 중... ({attempt+1}/12)")
                 time.sleep(5)
             
             if not found_frame:
-                status("❌ iframe을 찾지 못해 새로고침합니다.")
+                status("❌ 사이트 응답이 너무 느립니다. 새로고침 후 재도전합니다.")
                 driver.refresh()
                 continue
 
             # 2. 구역 및 날짜 선택
             try:
-                status("🔘 '달빛야영장' 구역 선택...")
+                # 구역 선택
                 rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
                 for rb in rbs:
                     if "달빛" in rb.find_element(By.XPATH, "./..").text:
@@ -99,52 +97,47 @@ if st.session_state.run:
                         time.sleep(3)
                         break
 
-                status(f"📅 {target_date}일 날짜 클릭...")
+                # 날짜 선택
                 dates = driver.find_elements(By.XPATH, f"//*[not(self::script) and text()='{target_date}']")
                 if dates:
                     target_btn = dates[-1] 
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_btn)
-                    time.sleep(1)
+                    time.sleep(2)
                     driver.execute_script("arguments[0].click();", target_btn)
                     
-                    status(f"⏳ 데이터 로딩 대기 (15초)...")
+                    status(f"⏳ {target_date}일 표 로딩 대기 (15초)...")
                     time.sleep(15) 
                     
-                    # 실시간 화면 캡쳐 표시
+                    # 증거 사진 남기기
                     driver.save_screenshot("current_view.png")
-                    image_area.image("current_view.png", caption="비서가 현재 보고 있는 화면")
+                    image_area.image("current_view.png", caption="비서가 현재 보고 있는 현장 화면")
                     
-                    # 3. 데이터 추출 (행 전체 텍스트 분석 - image_656e18.png 완벽 대응)
-                    status("🔍 표 내용 정밀 수색 중...")
+                    # 3. 데이터 추출 (단순하고 강력한 텍스트 분석)
+                    status("🔍 '신청' 버튼 눈으로 확인 중...")
                     rows = driver.find_elements(By.TAG_NAME, "tr")
                     available_sites = []
 
                     for row in rows:
                         row_text = row.text.replace("\n", " ")
-                        # '신청' 글자가 들어있고 '접수'는 없는 행만 선택
+                        # 행에 '신청'이 있고 '접수'가 없으면 무조건 빈자리!
                         if "신청" in row_text and "접수" not in row_text:
                             cells = row.find_elements(By.TAG_NAME, "td")
                             if len(cells) >= 2:
-                                # 사이트 이름은 2번째 칸(인덱스 1)에 위치
                                 site_name = cells[1].text.strip()
-                                if site_name:
-                                    available_sites.append(site_name)
+                                if site_name: available_sites.append(site_name)
                     
                     if available_sites:
                         available_sites = sorted(list(set(available_sites)))
-                        count = len(available_sites)
-                        site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                        
-                        msg = f"🔔 [빈자리 발견!]\n📅 날짜: {target_date}일\n✅ 가능수: {count}개\n---\n{site_list_str}\n\n지금 예약하세요!"
-                        send_telegram_msg(msg)
+                        site_list = "\n".join([f"📍 {s}" for s in available_sites])
+                        send_telegram_msg(f"🔔 [빈자리 발견!]\n📅 {target_date}일\n✅ 가능수: {len(available_sites)}개\n---\n{site_list}")
                         st.balloons()
-                        status(f"🎉 성공! {count}개 사이트 발견.")
+                        status(f"🎉 성공! 텔레그램 확인하세요!")
                     else:
-                        status(f"😴 {target_date}일 현재 '신청' 가능한 구역이 없습니다.")
+                        status(f"😴 {target_date}일 아직 자리가 없거나 로딩 중입니다.")
                 else:
-                    status(f"❌ {target_date}일 날짜 버튼을 찾지 못했습니다.")
+                    status(f"❌ {target_date}일 버튼을 찾지 못했습니다.")
             except Exception as e:
-                status(f"⚠️ 탐색 오류: {e}")
+                status(f"⚠️ 탐색 오류 발생: {e}")
 
             time.sleep(60) 
             driver.refresh()
