@@ -13,7 +13,7 @@ from datetime import datetime
 # [환경 설정]
 os.environ['TZ'] = 'Asia/Seoul'
 
-# [설정] 안태희 님 텔레그램 정보 (어제 성공했던 그 정보)
+# [설정] 안태희 님 정보
 TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48VpvQv68jgoJzSGY"
 CHAT_ID = "529787781"
 
@@ -58,76 +58,74 @@ if st.session_state.run:
 
     try:
         driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 20) # 20초간 인내심 있게 대기
+        wait = WebDriverWait(driver, 10) # 대기 시간을 효율적으로 단축
         
         while st.session_state.run:
-            status("🌐 사이트 접속 및 팝업 제거 중...")
+            status("🌐 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             
-            # 1. 팝업 제거 (어제처럼 깔끔하게 시작)
-            time.sleep(5)
+            # 1. [유연한 팝업 처리] 있으면 닫고, 없으면 바로 통과
             try:
-                for _ in range(3):
-                    driver.switch_to.alert.accept()
-                    time.sleep(1)
-            except: pass
+                # 2초만 딱 기다려보고 팝업 있으면 확인 클릭
+                WebDriverWait(driver, 2).until(EC.alert_is_present())
+                while True:
+                    alert = driver.switch_to.alert
+                    alert.accept()
+                    time.sleep(0.3)
+            except:
+                status("ℹ️ 현재는 팝업창이 없습니다. 바로 진행합니다.")
 
-            # 2. [입구 돌파] 어제 성공했던 iframe 진입 방식
-            status("📥 달력 시스템(iframe) 진입 시도...")
+            # 2. [입구 돌파] iframe 진입 강화
+            status("📥 달력 시스템 진입 시도...")
             try:
-                # iframe이 로딩될 때까지 기다렸다가 첫 번째(0번) 프레임으로 진입
+                # iframe이 나타날 때까지 최대 10초 대기 후 즉시 전환
                 wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
                 status("✅ 달력 내부 진입 성공!")
             except:
-                status("❌ 입구가 닫혀있습니다. 다시 시도합니다.")
+                status("❌ 입구 진입 실패. 다시 시도합니다.")
                 driver.refresh()
                 continue
 
-            # 3. 어제처럼 구역 선택 (달빛야영장)
+            # 3. 어제 성공했던 14개 추출 로직 시작
             try:
-                # 라디오 버튼이 나타날 때까지 대기
+                # 구역 선택 (달빛)
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='radio']")))
                 rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
                 for rb in rbs:
                     if "달빛" in rb.find_element(By.XPATH, "./..").text:
                         driver.execute_script("arguments[0].click();", rb)
-                        time.sleep(2)
+                        time.sleep(1)
                         break
+
+                # 날짜 선택
+                status(f"📅 {target_date}일 선택 시도...")
+                date_btns = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
+                if date_btns:
+                    driver.execute_script("arguments[0].click();", date_btns[-1])
+                    time.sleep(2)
+                    
+                    # 4. 빈자리 추출 (어제 성공 로직)
+                    rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
+                    available_sites = []
+                    for row in rows:
+                        cells = row.find_elements(By.TAG_NAME, "td")
+                        if len(cells) >= 3:
+                            site_name = cells[2].text.strip()
+                            if site_name and "접수" not in site_name:
+                                available_sites.append(site_name)
+                    
+                    if available_sites:
+                        available_sites = sorted(list(set(available_sites)))
+                        site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
+                        msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ 가능수: {len(available_sites)}개\n---\n{site_list_str}\n지금 바로 예약하세요!"
+                        send_telegram_msg(msg)
+                        st.balloons()
+                        st.session_state.run = False
+                        break
+                    else:
+                        status(f"😴 {target_date}일 빈자리 없음")
             except: pass
 
-            # 4. 날짜 정밀 클릭
-            status(f"📅 {target_date}일 선택 시도...")
-            # 화면상의 날짜 숫자를 직접 찾아 클릭
-            date_btns = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
-            if date_btns:
-                driver.execute_script("arguments[0].click();", date_btns[-1])
-                time.sleep(3)
-                
-                # 5. [어제 성공 로직] 빈자리 14개 추출기
-                status("🔍 빈자리 목록 추출 중...")
-                # '신청' 버튼이 활성화된 행(tr)을 모두 찾습니다.
-                rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
-                available_sites = []
-                for row in rows:
-                    cells = row.find_elements(By.TAG_NAME, "td")
-                    if len(cells) >= 3:
-                        site_name = cells[2].text.strip()
-                        # 어제 찍혔던 "작천정달빛야영장" 이름을 필터링
-                        if site_name and "접수" not in site_name:
-                            available_sites.append(site_name)
-                
-                if available_sites:
-                    available_sites = sorted(list(set(available_sites)))
-                    site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                    # 어제 태희 님이 받으셨던 그 메시지 형식 그대로!
-                    msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ 가능수: {len(available_sites)}개\n---\n{site_list_str}\n지금 바로 예약하세요!"
-                    send_telegram_msg(msg)
-                    st.balloons()
-                    st.session_state.run = False
-                    break
-                else:
-                    status(f"😴 {target_date}일 현재 빈자리 없음")
-            
             time.sleep(60)
             driver.refresh()
 
