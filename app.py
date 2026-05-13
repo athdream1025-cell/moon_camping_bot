@@ -33,8 +33,7 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button("🚀 감시 시작"):
         st.session_state.run = True
-        # [추가] 시작하자마자 텔레그램으로 인사 (연결 확인용)
-        send_telegram_msg(f"✅ 캠핑 비서가 {target_date}일 감시를 시작합니다!") 
+        send_telegram_msg(f"✅ 캠핑 비서가 {target_date}일 정밀 감시를 시작합니다!") 
 with col2:
     if st.button("🛑 정지"):
         st.session_state.run = False
@@ -62,7 +61,7 @@ if st.session_state.run:
         while st.session_state.run:
             status("🌐 사이트 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
-            time.sleep(5)
+            time.sleep(6) # 사이트 로딩 대기
             
             # 팝업 처리
             try:
@@ -70,7 +69,7 @@ if st.session_state.run:
                 alert.accept()
             except: pass
 
-            # 1. 모든 프레임을 수색하여 진입
+            # 1. 달력 프레임 진입
             iframes = driver.find_elements(By.TAG_NAME, "iframe")
             for i in range(len(iframes)):
                 driver.switch_to.default_content()
@@ -80,8 +79,9 @@ if st.session_state.run:
                         break
                 except: continue
 
-            # 2. 구역 선택 및 날짜 클릭
+            # 2. 구역 및 날짜 클릭
             try:
+                # 구역(달빛) 선택
                 rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
                 for rb in rbs:
                     if "달빛" in rb.find_element(By.XPATH, "./..").text:
@@ -89,38 +89,48 @@ if st.session_state.run:
                         time.sleep(2)
                         break
 
-                status(f"📅 {target_date}일 선택 및 데이터 로딩 대기...")
+                status(f"📅 {target_date}일 클릭 및 표 로딩 대기 (10초)...")
                 date_btns = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
                 if date_btns:
+                    # 실제 날짜 버튼 클릭
                     driver.execute_script("arguments[0].click();", date_btns[-1])
-                    # [수정] 표가 나타날 때까지 충분히(5초) 기다립니다.
-                    time.sleep(5) 
+                    
+                    # [핵심] 표가 새로 그려질 때까지 10초간 넉넉히 대기합니다.
+                    time.sleep(10) 
                     
                     # 3. 빈자리 추출 (어제 성공 로직)
-                    rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
+                    status("🔍 실시간 데이터 추출 중...")
+                    # '신청' 또는 '예약' 버튼이 포함된 줄(tr)을 모두 찾습니다.
+                    rows = driver.find_elements(By.XPATH, "//tr[contains(., '신청')]")
+                    
                     available_sites = []
                     for row in rows:
                         cells = row.find_elements(By.TAG_NAME, "td")
                         if len(cells) >= 3:
                             site_name = cells[2].text.strip()
+                            # '신청' 버튼이 활성화된 행만 수집
                             if site_name and "접수" not in site_name:
                                 available_sites.append(site_name)
                     
                     if available_sites:
                         available_sites = sorted(list(set(available_sites)))
                         site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                        msg = f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n✅ 가능수: {len(available_sites)}개\n---\n{site_list_str}\n지금 바로 예약하세요!"
+                        msg = f"🔔 [빈자리 발견!]\n📅 날짜: {target_date}일\n✅ 가능수: {len(available_sites)}개\n---\n{site_list_str}\n지금 바로 예약하세요!"
                         send_telegram_msg(msg)
                         st.balloons()
+                        # 성공 시에도 정지하지 않고 계속 감시하려면 아래 한 줄을 주석 처리하세요.
+                        # st.session_state.run = False
+                        # break
                     else:
-                        status(f"😴 {target_date}일 현재 빈자리 없음 (순찰 계속)")
-            except: pass
+                        status(f"😴 {target_date}일 현재 빈자리 없음 (재시도 대기)")
+            except Exception as e:
+                status(f"⚠️ 탐색 중 오류: {e}")
 
             time.sleep(60) # 1분마다 재확인
             driver.refresh()
 
     except Exception as e:
-        status(f"⚠️ 에러: {e}")
+        status(f"⚠️ 시스템 에러: {e}")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
