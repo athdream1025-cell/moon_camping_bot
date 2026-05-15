@@ -27,13 +27,13 @@ st.set_page_config(
 
 st.title("🏕️ 울주 캠핑 예약 감시기")
 
-target_date = st.text_input("감시 날짜", value="29")
+target_date = st.text_input(
+    "감시 날짜",
+    value="29"
+)
 
 if "run" not in st.session_state:
     st.session_state.run = False
-
-if "last_count" not in st.session_state:
-    st.session_state.last_count = 0
 
 col1, col2 = st.columns(2)
 
@@ -52,7 +52,9 @@ image_area = st.empty()
 # 로그 함수
 # =========================
 def status(msg):
+
     now = datetime.now().strftime('%H:%M:%S')
+
     log_area.info(f"[{now}] {msg}")
 
 # =========================
@@ -63,6 +65,7 @@ def take_shot(driver, name):
     filename = f"{name}.png"
 
     try:
+
         driver.save_screenshot(filename)
 
         image_area.image(
@@ -71,6 +74,7 @@ def take_shot(driver, name):
         )
 
     except Exception as e:
+
         status(f"스크린샷 실패: {e}")
 
 # =========================
@@ -132,13 +136,17 @@ def enter_booking_iframe(driver):
         )
     )
 
-    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+    iframes = driver.find_elements(
+        By.TAG_NAME,
+        "iframe"
+    )
 
     status(f"iframe 개수: {len(iframes)}")
 
     for idx in range(len(iframes)):
 
         try:
+
             driver.switch_to.default_content()
 
             driver.switch_to.frame(idx)
@@ -154,6 +162,7 @@ def enter_booking_iframe(driver):
                 return True
 
         except Exception as e:
+
             status(f"iframe {idx} 실패: {e}")
 
     return False
@@ -233,25 +242,42 @@ if st.session_state.run:
             # -------------------------
             status(f"🎯 {target_date}일 탐색 중...")
 
-            target_btn = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable(
-                    (
-                        By.XPATH,
-                        f"//td//a[normalize-space(text())='{target_date}']"
+            try:
+
+                target_btn = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable(
+                        (
+                            By.XPATH,
+                            f"//td//a[normalize-space(text())='{target_date}']"
+                        )
                     )
                 )
-            )
 
-            driver.execute_script(
-                "arguments[0].click();",
-                target_btn
-            )
+                driver.execute_script(
+                    "arguments[0].click();",
+                    target_btn
+                )
 
-            status("✅ 날짜 클릭 성공")
+                status("✅ 날짜 클릭 성공")
 
-            time.sleep(8)
+                time.sleep(5)
 
-            take_shot(driver, "date_clicked")
+                take_shot(driver, "date_clicked")
+
+            except TimeoutException:
+
+                status(
+                    f"❌ {target_date}일은 아직 "
+                    f"클릭 가능한 상태가 아님"
+                )
+
+                take_shot(driver, "date_not_open")
+
+                driver.quit()
+
+                time.sleep(30)
+
+                continue
 
             # -------------------------
             # 접수중 탐색
@@ -316,3 +342,4 @@ if st.session_state.run:
                 break
 
             time.sleep(1)
+
