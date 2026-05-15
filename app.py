@@ -32,6 +32,9 @@ target_date = st.text_input(
     value="29"
 )
 
+target_year = "2026"
+target_month = "05"
+
 if "run" not in st.session_state:
     st.session_state.run = False
 
@@ -238,42 +241,25 @@ if st.session_state.run:
             time.sleep(5)
 
             # -------------------------
-            # 날짜 클릭
+            # 날짜 선택 (핵심 수정)
             # -------------------------
-            status(f"🎯 {target_date}일 탐색 중...")
+            status(f"🎯 {target_date}일 JS 함수 실행 중...")
 
             try:
 
-                day_element = WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located(
-                        (
-                            By.XPATH,
-                            f"//p[contains(@class,'day') and text()='{target_date}']"
-                        )
-                    )
+                target_full_date = (
+                    f"{target_year}-{target_month}-"
+                    f"{target_date.zfill(2)}"
                 )
 
-                # 부모 요소 가져오기
-                parent = day_element.find_element(
-                    By.XPATH,
-                    "./.."
-                )
+                status(f"대상 날짜: {target_full_date}")
 
-                # 중앙으로 이동
+                # 사이트 내부 함수 직접 실행
                 driver.execute_script(
-                    "arguments[0].scrollIntoView({block:'center'});",
-                    parent
+                    f"newDateList('{target_full_date}',1);"
                 )
 
-                time.sleep(1)
-
-                # 강제 클릭
-                driver.execute_script(
-                    "arguments[0].click();",
-                    parent
-                )
-
-                status("✅ 날짜 클릭 완료")
+                status("✅ newDateList 실행 완료")
 
                 time.sleep(5)
 
@@ -281,7 +267,7 @@ if st.session_state.run:
 
             except Exception as e:
 
-                status(f"❌ 날짜 클릭 실패: {e}")
+                status(f"❌ 날짜 선택 실패: {e}")
 
                 take_shot(driver, "date_click_fail")
 
@@ -354,4 +340,3 @@ if st.session_state.run:
                 break
 
             time.sleep(1)
-
