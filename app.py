@@ -18,12 +18,11 @@ CHAT_ID = "529787781"
 def status(msg):
     log_area.info(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-# [추가] 단계별 사진 촬영 및 텔레그램 발송 함수
+# 단계별 사진 촬영 및 텔레그램 발송 함수
 def take_shot(driver, caption_text):
     try:
         driver.save_screenshot("live_report.png")
         image_area.image("live_report.png", caption=caption_text)
-        # 텔레그램으로도 실시간 전송하여 폰으로 바로 확인 가능하게 함
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
         with open("live_report.png", "rb") as photo:
             requests.post(url, data={"chat_id": CHAT_ID, "caption": f"📸 {caption_text}"}, files={"photo": photo})
@@ -68,23 +67,18 @@ if st.session_state.run:
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             time.sleep(8)
             
-            # 인증샷 1: 접속 직후 메인 화면이 떴는지 확인
             take_shot(driver, "1단계: 사이트 접속 직후 화면")
             
             found_door = False
-            for i in range(15): # 15번 돌파 시도
+            for i in range(15):
                 try:
                     status(f"🔑 [2단계] 입구 강제 개방 시도 중... ({i+1}/15)")
                     driver.execute_script("fn_move_page('01');") 
                     time.sleep(2)
                     
-                    # 매 시도마다 화면이 변하는지 캡쳐
-                    if i % 3 == 0:
-                        take_shot(driver, f"2단계: 입구 개방 시도 중 ({i+1}회째)")
-                    
-                    iframes = driver.find_elements(By.TAG_NAME, "iframe")
-                    if iframes:
-                        for idx in range(len(iframes)):
+                    if_elements = driver.find_elements(By.TAG_NAME, "iframe")
+                    if if_elements:
+                        for idx in range(len(if_elements)):
                             driver.switch_to.default_content()
                             driver.switch_to.frame(idx)
                             if "달빛" in driver.page_source:
@@ -94,44 +88,45 @@ if st.session_state.run:
                     continue
 
             if not found_door:
-                status("❌ 입구 돌파 실패. 사진 전송 후 새로고침합니다.")
-                take_shot(driver, "⚠️ 입구 돌파 실패 시점의 최종 화면")
-                time.sleep(5)
+                status("❌ 입구 돌파 실패. 새로고침합니다.")
                 driver.refresh()
                 continue
 
-            # 인증샷 2: iframe 내부 진입 성공 확인
-            take_shot(driver, "✅ 2단계 성공: 예약 달력 창 진입 완료")
+            # [확인 완료] 달력이 정상적으로 뜬 것을 확인한 시점
+            status("✅ [확인 완료] 내부 진입 성공 확인! 다음 단계로 이행합니다.")
+            take_shot(driver, "2단계 성공: 예약 달력 창 확인 완료")
 
             # [3단계] 구역 고정 및 날짜 타격
             try:
-                status("🔘 [3단계] '달빛야영장' 구역 선택 중...")
+                status("🔘 [3단계] '달빛야영장' 구역 고정 중...")
+                # 라디오 버튼 클릭 원격 제어
                 driver.execute_script("document.getElementById('site_gubun_01').click();")
-                time.sleep(2)
+                time.sleep(3)
                 
-                status(f"🎯 [4단계] 이번 달 {target_date}일 정밀 조준...")
-                target_btn = driver.find_element(By.開, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
+                status(f"🎯 [4단계] 이번 달 {target_date}일 정밀 조준... (오타 수리 완료)")
+                # [수정] By.開 오류를 By.XPATH로 완벽히 수정했습니다.
+                target_btn = driver.find_element(By.XPATH, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
                 driver.execute_script("arguments[0].click();", target_btn)
                 
-                status(f"✅ {target_date}일 클릭 완료! 최종 로딩 중...")
+                status(f"✅ {target_date}일 클릭 완료! 최종 예약판 로딩 중...")
                 time.sleep(12)
                 
-                # 인증샷 3: 날짜 클릭 후 최종 결과 화면
-                take_shot(driver, f"🎯 최종 결과: {target_date}일 예약판 상황")
+                # 최종 인증샷
+                take_shot(driver, f"🎯 최종 결과: {target_date}일 클릭 후 예약판 상황")
                 
                 if "신청" in driver.page_source:
                     requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 빈자리 감지! 지금 선점하세요!")
                     st.balloons()
             except Exception as e:
-                status("⚠️ 내부 탐색 중 오류 발생")
-                take_shot(driver, "⚠️ 날짜 클릭 단계 오류 발생 시점 화면")
+                status(f"⚠️ 내부 탐색 중 오류 발생: {e}")
+                take_shot(driver, "⚠️ 오류 발생 시점 화면 확인용")
 
             status("💤 순찰 완료. 3분 대기 후 다음 바퀴를 돕니다.")
             time.sleep(180) 
             driver.refresh()
 
     except Exception as e:
-        status("⚠️ 시스템 오류 발생으로 정지")
+        status(f"⚠️ 시스템 오류 발생으로 정지: {e}")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
