@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 
 # =========================
-# 환경설정 (태희 님 정보 고정)
+# 환경설정
 # =========================
 os.environ['TZ'] = 'Asia/Seoul'
 
@@ -24,7 +24,7 @@ BOOKING_URL = "https://camping.ulju.ulsan.kr/ujcamping/campsite/booking"
 # Streamlit UI
 # =========================
 st.set_page_config(page_title="울주 캠핑 감시기", page_icon="🏕️")
-st.title("🏕️ 울주 캠핑 예약 감시기 (순정 복구 버전)")
+st.title("🏕️ 울주 캠핑 예약 감시기 (접수중 판독 버전)")
 
 target_date = st.text_input("감시 날짜", value="29")
 
@@ -90,7 +90,6 @@ def create_driver():
     driver.set_page_load_timeout(60)
     return driver
 
-# 예전 성공 방식 그대로 단순하게 iframe 찾아 들어가는 함수
 def enter_booking_iframe(driver):
     status("🔍 예약창(iframe) 수색 중...")
     iframes = driver.find_elements(By.TAG_NAME, "iframe")
@@ -132,19 +131,19 @@ if st.session_state.run:
 
             take_shot(driver, "iframe_success")
 
-            # 구역 선택 (달빛야영장 라디오 버튼 단순 클릭)
+            # 구역 선택
             status("🏕️ 달빛야영장 구역 고정")
             zone_btn = driver.find_element(By.ID, "site_gubun_01")
             driver.execute_script("arguments[0].click();", zone_btn)
             time.sleep(4)
 
-            # 날짜 클릭 (가장 직관적이었던 예전 오리지널 날짜 타격)
+            # 날짜 클릭
             status(f"🎯 {target_date}일 클릭 시도")
             all_dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
             
             target_btn = None
             if all_dates:
-                target_btn = all_dates[-1] # 예전 성공 코드 핵심: 달력에서 가장 마지막에 있는 날짜 버튼 선택
+                target_btn = all_dates[-1]
 
             if target_btn:
                 driver.execute_script("arguments[0].click();", target_btn)
@@ -152,20 +151,21 @@ if st.session_state.run:
                 time.sleep(10)
                 take_shot(driver, "date_clicked")
 
-                # 신청 버튼 검사
-                apply_buttons = driver.find_elements(By.XPATH, "//a[contains(text(),'신청')]")
+                # [핵심 수정] 태희 님 지적사항 반영: '신청' 대신 '접수중' 글자 정밀 감사
+                # 화면에 '접수중'이라는 텍스트를 가진 모든 요소를 찾아냅니다.
+                apply_buttons = driver.find_elements(By.XPATH, "//*[contains(text(),'접수중')]")
                 count = len(apply_buttons)
-                status(f"📈 현재 신청 가능 개수: {count}개")
+                status(f"📈 현재 '접수중' 자리 개수: {count}개")
 
                 if count > 0:
-                    status("🎉 빈자리 발견!")
-                    take_shot(driver, "SUCCESS")
+                    status("🎉 [대박] 빈자리(접수중) 발견!")
+                    take_shot(driver, "SUCCESS_OPEN")
                     if not st.session_state.alerted:
-                        telegram_message(f"🔔 울주 캠핑 {target_date}일 예약 가능 발견!")
+                        telegram_message(f"🔔 울주 캠핑 {target_date}일 [접수중] 자리 발견! 지금 들어가세요!")
                         st.session_state.alerted = True
                         st.balloons()
                 else:
-                    status("😴 아직 매진 상태")
+                    status("😴 아직 모든 자리가 매진(예약완료) 상태")
                     st.session_state.alerted = False
             else:
                 status(f"❌ 달력에서 {target_date}일 버튼을 식별하지 못함")
