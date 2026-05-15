@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -370,4 +369,3 @@ if st.session_state.run:
                 break
 
             time.sleep(1)
-```
