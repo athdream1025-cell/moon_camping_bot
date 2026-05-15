@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 
 # =========================
-# 환경설정
+# 환경설정 (태희 님 정보 고정)
 # =========================
 os.environ['TZ'] = 'Asia/Seoul'
 
@@ -24,7 +24,7 @@ BOOKING_URL = "https://camping.ulju.ulsan.kr/ujcamping/campsite/booking"
 # Streamlit UI
 # =========================
 st.set_page_config(page_title="울주 캠핑 감시기", page_icon="🏕️")
-st.title("🏕️ 울주 캠핑 예약 감시기 (정밀 동기화)")
+st.title("🏕️ 울주 캠핑 예약 감시기 (순정 복구 버전)")
 
 target_date = st.text_input("감시 날짜", value="29")
 
@@ -90,27 +90,19 @@ def create_driver():
     driver.set_page_load_timeout(60)
     return driver
 
-# [수정] iframe 진입 체크 강화
+# 예전 성공 방식 그대로 단순하게 iframe 찾아 들어가는 함수
 def enter_booking_iframe(driver):
-    status("🔍 iframe 탐색 및 예약 데이터 로딩 대기...")
-    for attempt in range(15):
+    status("🔍 예약창(iframe) 수색 중...")
+    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+    for idx, frame in enumerate(iframes):
         driver.switch_to.default_content()
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        
-        for idx, frame in enumerate(iframes):
-            try:
-                driver.switch_to.default_content()
-                driver.switch_to.frame(frame)
-                
-                # 단순히 달력 클래스뿐만 아니라 구역 선택 ID까지 같이 준비되었는지 체크
-                WebDriverWait(driver, 3).until(
-                    EC.presence_of_element_located((By.ID, "site_gubun_01"))
-                )
-                status(f"✅ iframe 및 구역 제어반 진입 성공 ({idx})")
+        try:
+            driver.switch_to.frame(idx)
+            if "달빛" in driver.page_source:
+                status(f"✅ 예전 성공 통로 진입 완료! ({idx}번 방)")
                 return True
-            except:
-                continue
-        time.sleep(2)
+        except:
+            continue
     return False
 
 # =========================
@@ -121,11 +113,10 @@ if st.session_state.run:
         driver = None
         try:
             driver = create_driver()
-            wait = WebDriverWait(driver, 20) # 30초에서 20초로 최적화
 
             status("🌐 메인 페이지 접속")
             driver.get(BOOKING_URL)
-            time.sleep(5)
+            time.sleep(6)
 
             status("🔑 예약 시스템 강제 진입 (fn_move_page)")
             driver.execute_script("fn_move_page('01');")
@@ -134,63 +125,53 @@ if st.session_state.run:
             # iframe 진입
             ok = enter_booking_iframe(driver)
             if not ok:
-                status("❌ iframe 진입 실패")
-                take_shot(driver, "iframe_fail")
+                status("❌ 입구 발견 실패. 재접속 시도합니다.")
                 driver.quit()
-                time.sleep(60)
+                time.sleep(30)
                 continue
 
             take_shot(driver, "iframe_success")
 
-            # 구역 선택
-            status("🏕️ '달빛야영장' 구역 버튼 클릭 시도")
-            zone_btn = wait.until(EC.element_to_be_clickable((By.ID, "site_gubun_01")))
+            # 구역 선택 (달빛야영장 라디오 버튼 단순 클릭)
+            status("🏕️ 달빛야영장 구역 고정")
+            zone_btn = driver.find_element(By.ID, "site_gubun_01")
             driver.execute_script("arguments[0].click();", zone_btn)
+            time.sleep(4)
+
+            # 날짜 클릭 (가장 직관적이었던 예전 오리지널 날짜 타격)
+            status(f"🎯 {target_date}일 클릭 시도")
+            all_dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
             
-            # [핵심 수리] 구역을 선택하면 달력이 새로고침되므로, 
-            # 새롭게 바뀐 달력과 날짜 버튼이 완전히 클릭 가능해질 때까지 '정밀 대기'를 걸어줍니다.
-            status("⏳ 구역 변경에 따른 달력 새로고침 대기 중...")
-            time.sleep(5) 
+            target_btn = None
+            if all_dates:
+                target_btn = all_dates[-1] # 예전 성공 코드 핵심: 달력에서 가장 마지막에 있는 날짜 버튼 선택
 
-            # 날짜 클릭
-            status(f"🎯 이번 달 {target_date}일 정밀 타격 시도")
-            date_xpath = (
-                f"//td[not(contains(@class,'prev_month')) "
-                f"and not(contains(@class,'next_month')) "
-                f"and not(contains(@class,'other_month'))]"
-                f"//a[text()='{target_date}']"
-            )
+            if target_btn:
+                driver.execute_script("arguments[0].click();", target_btn)
+                status("📋 예약 현황판 최종 로딩 (10초 대기)")
+                time.sleep(10)
+                take_shot(driver, "date_clicked")
 
-            # 완벽하게 로딩되어 클릭 가능할 때까지 대기 후 조작
-            target_btn = wait.until(EC.element_to_be_clickable((By.XPATH, date_xpath)))
-            driver.execute_script("arguments[0].click();", target_btn)
+                # 신청 버튼 검사
+                apply_buttons = driver.find_elements(By.XPATH, "//a[contains(text(),'신청')]")
+                count = len(apply_buttons)
+                status(f"📈 현재 신청 가능 개수: {count}개")
 
-            status("📋 예약 현황 최종 판독 대기 (10초)")
-            time.sleep(10)
-            take_shot(driver, "date_clicked")
-
-            # 신청 버튼 검사
-            apply_buttons = driver.find_elements(By.XPATH, "//a[contains(text(),'신청')]")
-            count = len(apply_buttons)
-            status(f"📈 현재 예약 신청 가능 구역 수: {count}개")
-
-            if count > 0:
-                status("🎉 [필승] 빈자리 감지 완료!")
-                take_shot(driver, "SUCCESS_OPEN")
-                if not st.session_state.alerted:
-                    telegram_message(f"🔔 [대박] 울주 캠핑 달빛야영장 {target_date}일 빈자리 뚫렸습니다! 즉시 접속하세요!")
-                    st.session_state.alerted = True
-                    st.balloons()
+                if count > 0:
+                    status("🎉 빈자리 발견!")
+                    take_shot(driver, "SUCCESS")
+                    if not st.session_state.alerted:
+                        telegram_message(f"🔔 울주 캠핑 {target_date}일 예약 가능 발견!")
+                        st.session_state.alerted = True
+                        st.balloons()
+                else:
+                    status("😴 아직 매진 상태")
+                    st.session_state.alerted = False
             else:
-                status("😴 모든 자리가 매진 상태입니다.")
-                st.session_state.alerted = False
+                status(f"❌ 달력에서 {target_date}일 버튼을 식별하지 못함")
 
-        except TimeoutException:
-            status("⏰ 사이트 로딩 타임아웃 (서버 응답 지연)")
-            if driver:
-                take_shot(driver, "timeout_report")
         except Exception as e:
-            status(f"⚠️ 시스템 내부 에러 발생: {e}")
+            status(f"⚠️ 가동 중 오류 발생: {e}")
             if driver:
                 take_shot(driver, "error_report")
         finally:
@@ -200,8 +181,8 @@ if st.session_state.run:
             except:
                 pass
 
-        # 다음 순찰
-        status("💤 3분간 대기 후 다음 교대 순찰을 시작합니다.")
+        # 다음 순찰 대기
+        status("💤 3분간 대기 후 다음 검사 시작")
         for i in range(180):
             if not st.session_state.run:
                 break
