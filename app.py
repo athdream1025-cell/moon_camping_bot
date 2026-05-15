@@ -238,17 +238,17 @@ if st.session_state.run:
             time.sleep(5)
 
             # -------------------------
-            # 날짜 선택
+            # 날짜 강제 클릭
             # -------------------------
-            status(f"🎯 {target_date}일 탐색 중...")
+            status(f"🎯 {target_date}일 강제 탐색 중...")
 
             try:
 
                 target_btn = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable(
+                    EC.presence_of_element_located(
                         (
                             By.XPATH,
-                            f"//td//a[normalize-space(text())='{target_date}']"
+                            f"//td[.//*[normalize-space(text())='{target_date}']]"
                         )
                     )
                 )
@@ -258,7 +258,7 @@ if st.session_state.run:
                     target_btn
                 )
 
-                status("✅ 날짜 클릭 성공")
+                status("✅ 날짜 강제 클릭 시도 완료")
 
                 time.sleep(5)
 
@@ -266,12 +266,9 @@ if st.session_state.run:
 
             except TimeoutException:
 
-                status(
-                    f"❌ {target_date}일은 아직 "
-                    f"클릭 가능한 상태가 아님"
-                )
+                status(f"❌ {target_date}일 셀 자체를 찾지 못함")
 
-                take_shot(driver, "date_not_open")
+                take_shot(driver, "date_not_found")
 
                 driver.quit()
 
@@ -286,7 +283,7 @@ if st.session_state.run:
 
             apply_buttons = driver.find_elements(
                 By.XPATH,
-                "//*[contains(@class,'btn') and contains(text(),'접수중')]"
+                "//*[contains(text(),'접수중')]"
             )
 
             count = len(apply_buttons)
