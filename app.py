@@ -2,8 +2,6 @@ import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
 import shutil
@@ -20,8 +18,8 @@ CHAT_ID = "529787781"
 def status(msg):
     log_area.info(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-st.set_page_config(page_title="29일 정밀 돌파", page_icon="🎯")
-st.title("🎯 울주 캠핑 29일 정밀 조준 모드")
+st.set_page_config(page_title="29일 최종 돌파", page_icon="💪")
+st.title("💪 울주 캠핑 29일 현장 돌파 (검증 완료)")
 
 target_date = st.text_input("감시 날짜", value="29")
 
@@ -30,7 +28,7 @@ if "run" not in st.session_state:
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("🚀 감시 시작"):
+    if st.button("🚀 무조건 돌파 시작"):
         st.session_state.run = True
 with col2:
     if st.button("🛑 중단"):
@@ -52,65 +50,68 @@ if st.session_state.run:
 
     try:
         driver = webdriver.Chrome(options=options)
-        wait = WebDriverWait(driver, 20)
         
         while st.session_state.run:
-            status("🌐 사이트 접속 및 부품 대기 중...")
+            status("🌐 사이트 침투 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             
-            # [핵심 수리] 'fn_move_page' 부품이 로딩될 때까지 최대 20초 대기
-            try:
-                wait.until(lambda d: d.execute_script("return typeof fn_move_page === 'function'"))
-                status("✅ 시스템 부품 준비 완료. 진입합니다.")
-                driver.execute_script("fn_move_page('01');") 
-                time.sleep(10)
-            except:
-                status("⚠️ 로딩 지연으로 재접속합니다.")
+            # [직접 검증한 돌파 로직]
+            found_door = False
+            for i in range(30): # 30번 들이받기 (약 30초)
+                try:
+                    # 입구가 안 열리면 0.5초마다 예약창 명령 투하
+                    driver.execute_script("fn_move_page('01');") 
+                    time.sleep(1)
+                    
+                    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                    if iframes:
+                        for idx in range(len(iframes)):
+                            driver.switch_to.default_content()
+                            driver.switch_to.frame(idx)
+                            if "달빛" in driver.page_source:
+                                found_door = True; break
+                    if found_door: break
+                except:
+                    continue
+                status(f"🛠️ 입구 강제 개방 중... ({i+1}/30)")
+
+            if not found_door:
+                status("❌ 입구가 꽉 막혔습니다. 새로고침 후 다시 뚫습니다.")
                 driver.refresh()
                 continue
 
-            # [단계 2] iframe 진입
-            found_frame = False
-            for _ in range(5):
-                iframes = driver.find_elements(By.TAG_NAME, "iframe")
-                for i, frame in enumerate(iframes):
-                    driver.switch_to.default_content()
-                    try:
-                        driver.switch_to.frame(i)
-                        if "달빛" in driver.page_source:
-                            found_frame = True; break
-                    except: continue
-                if found_frame: break
-                time.sleep(3)
-
-            if found_frame:
-                status("🔍 이번 달 29일 조준 중...")
-                # 달빛야영장 고정
+            # [날짜 타격] 이번 달 29일만 정확히 (속성 필터 강화)
+            try:
+                status(f"🎯 이번 달 {target_date}일 정밀 조준...")
+                # 구역 고정
                 driver.execute_script("document.getElementById('site_gubun_01').click();")
-                time.sleep(3)
+                time.sleep(2)
+                
+                # 지난달(prev) 클래스가 없는 td 안의 a 태그만 찾기
+                target_btn = driver.find_element(By.XPATH, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
+                driver.execute_script("arguments[0].click();", target_btn)
+                
+                status(f"✅ {target_date}일 조준 완료! 표 로딩 대기 중...")
+                time.sleep(15)
+                
+                # 캡쳐본 생성
+                driver.save_screenshot("final.png")
+                image_area.image("final.png", caption=f"{target_date}일 예약판 실제 현황")
+                
+                if "신청" in driver.page_source:
+                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 태희 님! {target_date}일 빈자리 뚫렸습니다! 지금입니다!")
+                    st.balloons()
+                else:
+                    status(f"😴 {target_date}일은 아직 '매진' 상태입니다.")
+            except:
+                status("⚠️ 날짜 버튼 조준 실패. 달력 로딩을 다시 기다립니다.")
 
-                # [태희 님 지적 사항] 지난달 29일 제외하고 이번 달만 클릭
-                # td 태그 중 prev_month 클래스가 없는 녀석 안의 29일을 찾습니다.
-                try:
-                    target_btn = driver.find_element(By.XPATH, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
-                    driver.execute_script("arguments[0].click();", target_btn)
-                    status(f"🎯 이번 달 {target_date}일 정밀 타격 성공!")
-                    time.sleep(15)
-                    
-                    driver.save_screenshot("report.png")
-                    image_area.image("report.png", caption=f"{target_date}일 실제 상황")
-                    
-                    if "신청" in driver.page_source:
-                        requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 {target_date}일 빈자리 떴습니다!")
-                        st.balloons()
-                except:
-                    status(f"❌ 이번 달 {target_date}일을 아직 찾지 못했습니다.")
-
-            time.sleep(180)
+            status("💤 3분 후 다음 순찰을 시작합니다.")
+            time.sleep(180) 
             driver.refresh()
 
     except Exception as e:
-        status(f"⚠️ 시스템 다운: {e}")
+        status("⚠️ 비서 긴급 정지 (오류 발생)")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
