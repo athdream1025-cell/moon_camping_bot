@@ -11,15 +11,27 @@ from datetime import datetime
 # [환경 설정]
 os.environ['TZ'] = 'Asia/Seoul'
 
-# [설정] 텔레그램 정보
+# [설정] 안태희 님 텔레그램 정보
 TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48VpvQv68jgoJzSGY"
 CHAT_ID = "529787781"
 
 def status(msg):
     log_area.info(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-st.set_page_config(page_title="29일 최종 돌파", page_icon="💪")
-st.title("💪 울주 캠핑 29일 현장 돌파 (검증 완료)")
+# [추가] 단계별 사진 촬영 및 텔레그램 발송 함수
+def take_shot(driver, caption_text):
+    try:
+        driver.save_screenshot("live_report.png")
+        image_area.image("live_report.png", caption=caption_text)
+        # 텔레그램으로도 실시간 전송하여 폰으로 바로 확인 가능하게 함
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+        with open("live_report.png", "rb") as photo:
+            requests.post(url, data={"chat_id": CHAT_ID, "caption": f"📸 {caption_text}"}, files={"photo": photo})
+    except:
+        pass
+
+st.set_page_config(page_title="29일 실시간 추적", page_icon="📸")
+st.title("📸 울주 캠핑 단계별 실시간 인증 모드")
 
 target_date = st.text_input("감시 날짜", value="29")
 
@@ -28,7 +40,7 @@ if "run" not in st.session_state:
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("🚀 무조건 돌파 시작"):
+    if st.button("🚀 실시간 추적 시작"):
         st.session_state.run = True
 with col2:
     if st.button("🛑 중단"):
@@ -52,16 +64,23 @@ if st.session_state.run:
         driver = webdriver.Chrome(options=options)
         
         while st.session_state.run:
-            status("🌐 사이트 침투 중...")
+            status("🌐 [1단계] 사이트 주소 접속 중...")
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
+            time.sleep(8)
             
-            # [직접 검증한 돌파 로직]
+            # 인증샷 1: 접속 직후 메인 화면이 떴는지 확인
+            take_shot(driver, "1단계: 사이트 접속 직후 화면")
+            
             found_door = False
-            for i in range(30): # 30번 들이받기 (약 30초)
+            for i in range(15): # 15번 돌파 시도
                 try:
-                    # 입구가 안 열리면 0.5초마다 예약창 명령 투하
+                    status(f"🔑 [2단계] 입구 강제 개방 시도 중... ({i+1}/15)")
                     driver.execute_script("fn_move_page('01');") 
-                    time.sleep(1)
+                    time.sleep(2)
+                    
+                    # 매 시도마다 화면이 변하는지 캡쳐
+                    if i % 3 == 0:
+                        take_shot(driver, f"2단계: 입구 개방 시도 중 ({i+1}회째)")
                     
                     iframes = driver.find_elements(By.TAG_NAME, "iframe")
                     if iframes:
@@ -73,45 +92,46 @@ if st.session_state.run:
                     if found_door: break
                 except:
                     continue
-                status(f"🛠️ 입구 강제 개방 중... ({i+1}/30)")
 
             if not found_door:
-                status("❌ 입구가 꽉 막혔습니다. 새로고침 후 다시 뚫습니다.")
+                status("❌ 입구 돌파 실패. 사진 전송 후 새로고침합니다.")
+                take_shot(driver, "⚠️ 입구 돌파 실패 시점의 최종 화면")
+                time.sleep(5)
                 driver.refresh()
                 continue
 
-            # [날짜 타격] 이번 달 29일만 정확히 (속성 필터 강화)
+            # 인증샷 2: iframe 내부 진입 성공 확인
+            take_shot(driver, "✅ 2단계 성공: 예약 달력 창 진입 완료")
+
+            # [3단계] 구역 고정 및 날짜 타격
             try:
-                status(f"🎯 이번 달 {target_date}일 정밀 조준...")
-                # 구역 고정
+                status("🔘 [3단계] '달빛야영장' 구역 선택 중...")
                 driver.execute_script("document.getElementById('site_gubun_01').click();")
                 time.sleep(2)
                 
-                # 지난달(prev) 클래스가 없는 td 안의 a 태그만 찾기
-                target_btn = driver.find_element(By.XPATH, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
+                status(f"🎯 [4단계] 이번 달 {target_date}일 정밀 조준...")
+                target_btn = driver.find_element(By.開, f"//td[not(contains(@class, 'prev')) and not(contains(@class, 'next'))]//a[text()='{target_date}']")
                 driver.execute_script("arguments[0].click();", target_btn)
                 
-                status(f"✅ {target_date}일 조준 완료! 표 로딩 대기 중...")
-                time.sleep(15)
+                status(f"✅ {target_date}일 클릭 완료! 최종 로딩 중...")
+                time.sleep(12)
                 
-                # 캡쳐본 생성
-                driver.save_screenshot("final.png")
-                image_area.image("final.png", caption=f"{target_date}일 예약판 실제 현황")
+                # 인증샷 3: 날짜 클릭 후 최종 결과 화면
+                take_shot(driver, f"🎯 최종 결과: {target_date}일 예약판 상황")
                 
                 if "신청" in driver.page_source:
-                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 태희 님! {target_date}일 빈자리 뚫렸습니다! 지금입니다!")
+                    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?chat_id={CHAT_ID}&text=🔔 빈자리 감지! 지금 선점하세요!")
                     st.balloons()
-                else:
-                    status(f"😴 {target_date}일은 아직 '매진' 상태입니다.")
-            except:
-                status("⚠️ 날짜 버튼 조준 실패. 달력 로딩을 다시 기다립니다.")
+            except Exception as e:
+                status("⚠️ 내부 탐색 중 오류 발생")
+                take_shot(driver, "⚠️ 날짜 클릭 단계 오류 발생 시점 화면")
 
-            status("💤 3분 후 다음 순찰을 시작합니다.")
+            status("💤 순찰 완료. 3분 대기 후 다음 바퀴를 돕니다.")
             time.sleep(180) 
             driver.refresh()
 
     except Exception as e:
-        status("⚠️ 비서 긴급 정지 (오류 발생)")
+        status("⚠️ 시스템 오류 발생으로 정지")
         st.session_state.run = False
     finally:
         if 'driver' in locals(): driver.quit()
