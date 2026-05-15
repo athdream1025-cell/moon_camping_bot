@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -6,7 +7,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import time
-import requests
 import shutil
 import os
 from datetime import datetime
@@ -16,20 +16,15 @@ from datetime import datetime
 # =========================
 os.environ['TZ'] = 'Asia/Seoul'
 
-# Streamlit secrets 사용 추천
-# .streamlit/secrets.toml 파일 사용
-# TELEGRAM_TOKEN="토큰"
-# CHAT_ID="채팅아이디"
-
-TELEGRAM_TOKEN = st.secrets["TELEGRAM_TOKEN"]
-CHAT_ID = st.secrets["CHAT_ID"]
-
 BOOKING_URL = "https://camping.ulju.ulsan.kr/ujcamping/campsite/booking"
 
 # =========================
 # Streamlit UI
 # =========================
-st.set_page_config(page_title="울주 캠핑 감시기", page_icon="🏕️")
+st.set_page_config(
+    page_title="울주 캠핑 감시기",
+    page_icon="🏕️"
+)
 
 st.title("🏕️ 울주 캠핑 예약 감시기")
 
@@ -37,9 +32,6 @@ target_date = st.text_input("감시 날짜", value="29")
 
 if "run" not in st.session_state:
     st.session_state.run = False
-
-if "alerted" not in st.session_state:
-    st.session_state.alerted = False
 
 if "last_count" not in st.session_state:
     st.session_state.last_count = 0
@@ -65,50 +57,19 @@ def status(msg):
     log_area.info(f"[{now}] {msg}")
 
 # =========================
-# 텔레그램
-# =========================
-def telegram_message(msg):
-    try:
-        requests.get(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            params={
-                "chat_id": CHAT_ID,
-                "text": msg
-            },
-            timeout=10
-        )
-    except Exception as e:
-        status(f"텔레그램 메시지 실패: {e}")
-
-def telegram_photo(path, caption=""):
-    try:
-        with open(path, "rb") as photo:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
-                data={
-                    "chat_id": CHAT_ID,
-                    "caption": caption
-                },
-                files={
-                    "photo": photo
-                },
-                timeout=20
-            )
-    except Exception as e:
-        status(f"텔레그램 사진 실패: {e}")
-
-# =========================
 # 스크린샷
 # =========================
 def take_shot(driver, name):
+
     filename = f"{name}.png"
 
     try:
         driver.save_screenshot(filename)
 
-        image_area.image(filename, caption=name)
-
-        telegram_photo(filename, f"📸 {name}")
+        image_area.image(
+            filename,
+            caption=name
+        )
 
     except Exception as e:
         status(f"스크린샷 실패: {e}")
@@ -117,6 +78,7 @@ def take_shot(driver, name):
 # 드라이버 생성
 # =========================
 def create_driver():
+
     options = Options()
 
     options.add_argument("--headless=new")
@@ -144,7 +106,10 @@ def create_driver():
         False
     )
 
-    chrome_path = shutil.which("chromium") or shutil.which("chromium-browser")
+    chrome_path = (
+        shutil.which("chromium")
+        or shutil.which("chromium-browser")
+    )
 
     if chrome_path:
         options.binary_location = chrome_path
@@ -204,23 +169,27 @@ if st.session_state.run:
         driver = None
 
         try:
+
             driver = create_driver()
 
             # -------------------------
-            # 메인 페이지
+            # 메인 페이지 접속
             # -------------------------
             status("🌐 메인 페이지 접속")
 
             driver.get(BOOKING_URL)
 
+            time.sleep(5)
+
             # -------------------------
-            # 예약 페이지 강제 이동
+            # 예약 시스템 진입
             # -------------------------
             status("🔑 예약 시스템 진입")
 
-            driver.execute_script("fn_move_page('01');")
+            driver.execute_script(
+                "fn_move_page('01');"
+            )
 
-            # iframe 생성 대기
             time.sleep(5)
 
             # -------------------------
@@ -299,42 +268,21 @@ if st.session_state.run:
 
             status(f"📈 접수중 자리 개수: {count}")
 
-            # 자리명 추출
-            seat_names = []
-
-            for btn in apply_buttons:
-
-                try:
-                    seat_names.append(btn.text.strip())
-                except:
-                    pass
-
             if count > 0:
 
                 status("🎉 빈자리 발견!")
 
                 take_shot(driver, "SUCCESS_OPEN")
 
-                # 개수 변화 시만 알림
-                if st.session_state.last_count != count:
+                st.success(
+                    f"{target_date}일 접수중 자리 발견!"
+                )
 
-                    msg = (
-                        f"🔔 울주 캠핑 {target_date}일 "
-                        f"접수중 자리 발견!\n"
-                        f"현재 개수: {count}"
-                    )
-
-                    telegram_message(msg)
-
-                    st.balloons()
-
-                st.session_state.last_count = count
+                st.balloons()
 
             else:
 
                 status("😴 아직 매진 상태")
-
-                st.session_state.last_count = 0
 
         except TimeoutException:
 
@@ -369,3 +317,4 @@ if st.session_state.run:
                 break
 
             time.sleep(1)
+```
