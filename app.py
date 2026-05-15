@@ -238,37 +238,52 @@ if st.session_state.run:
             time.sleep(5)
 
             # -------------------------
-            # 날짜 강제 클릭
+            # 날짜 클릭
             # -------------------------
-            status(f"🎯 {target_date}일 강제 탐색 중...")
+            status(f"🎯 {target_date}일 탐색 중...")
 
             try:
 
-                target_btn = WebDriverWait(driver, 10).until(
+                day_element = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located(
                         (
                             By.XPATH,
-                            f"//td[.//*[normalize-space(text())='{target_date}']]"
+                            f"//p[contains(@class,'day') and text()='{target_date}']"
                         )
                     )
                 )
 
-                driver.execute_script(
-                    "arguments[0].click();",
-                    target_btn
+                # 부모 요소 가져오기
+                parent = day_element.find_element(
+                    By.XPATH,
+                    "./.."
                 )
 
-                status("✅ 날짜 강제 클릭 시도 완료")
+                # 중앙으로 이동
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});",
+                    parent
+                )
+
+                time.sleep(1)
+
+                # 강제 클릭
+                driver.execute_script(
+                    "arguments[0].click();",
+                    parent
+                )
+
+                status("✅ 날짜 클릭 완료")
 
                 time.sleep(5)
 
                 take_shot(driver, "date_clicked")
 
-            except TimeoutException:
+            except Exception as e:
 
-                status(f"❌ {target_date}일 셀 자체를 찾지 못함")
+                status(f"❌ 날짜 클릭 실패: {e}")
 
-                take_shot(driver, "date_not_found")
+                take_shot(driver, "date_click_fail")
 
                 driver.quit()
 
