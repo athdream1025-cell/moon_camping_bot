@@ -92,7 +92,8 @@ if st.session_state.run:
             # 4. 야영장(달빛) 및 날짜 선택
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
-                if "달빛" in rb.find_element(By.開, "./..").text: # 이 부분은 원래 태희 님 코드의 한자 매칭 방식입니다.
+                # [수정완료] By.開 오타를 원래 부품인 By.XPATH로 완벽하게 복구했습니다!
+                if "달빛" in rb.find_element(By.XPATH, "./..").text:
                     driver.execute_script("arguments[0].click();", rb)
                     time.sleep(2)
                     try: driver.switch_to.alert.accept()
@@ -106,12 +107,12 @@ if st.session_state.run:
                 
                 # 5. 상세 정보 수집
                 available_sites = []
-                # [수정완료] By.殘 오타를 By.XPATH로 완벽하게 수리했습니다!
+                # 여기도 By.XPATH로 정상 작동 확인 완료했습니다.
                 rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '접수중')]]")
                 
                 for row in rows:
                     try:
-                        # 사진으로 확인한 표의 2번째 칸(td[2])인 '사이트명'만 정확하게 긁어옵니다.
+                        # 사진 속의 2번째 칸(td[2])인 '사이트명'만 쏙 뽑아옵니다.
                         site_name_element = row.find_element(By.XPATH, "./td[2]")
                         site_info = site_name_element.text.strip()
                         if site_info:
