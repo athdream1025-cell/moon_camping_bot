@@ -39,7 +39,7 @@ with col2:
 log_area = st.empty()
 
 if st.session_state.run:
-    log_area.info(f"🔄 [{month_option}] {target_date}일 상세 감시 중... (사진 기반 튜닝)")
+    log_area.info(f"🔄 [{month_option}] {target_date}일 상세 감시 중... (태그 정밀 튜닝)")
     
     options = Options()
     options.add_argument("--headless")
@@ -99,27 +99,28 @@ if st.session_state.run:
                     except: pass
                     break
 
-            # 5. [수정] 사진 속 달력 우측 상단 '다음 달 이동 버튼' 정밀 조준
+            # 5. 다음 달 선택 시 캘린더 조작
             if month_option == "다음 달 (6월)":
                 try:
-                    # 사진 속 상단 우측 다음달 버튼 영역(행의 마지막 td 또는 버튼 클래스)을 직접 타격합니다.
-                    # 일반적인 텍스트 매칭이나 이미지 버튼 태그를 다각도로 잡도록 설계했습니다.
                     next_month_btns = driver.find_elements(By.XPATH, "//img[contains(@src, 'next')]") or \
-                                      driver.find_elements(By.XPATH, "//button[contains(text(), '▶')]") or \
+                                      driver.find_elements(By.開, "//button[contains(text(), '▶')]") or \
                                       driver.find_elements(By.XPATH, "//*[contains(@class, 'next')]")
                     if next_month_btns:
                         driver.execute_script("arguments[0].click();", next_month_btns[-1])
                     time.sleep(4) 
                 except: pass
 
-            # 6. 날짜 선택 ([정밀 튜닝] 눈에 보이는 진짜 6월 달력 칸 안의 숫자만 타격)
-            # 회색 가짜 날짜(other-month)를 피하기 위해 정확히 유효한 일자 셀 안의 텍스트나 링크를 찾습니다.
-            dates = driver.find_elements(By.XPATH, f"//td[not(contains(@class, 'other'))]//a[text()='{target_date}']") or \
-                    driver.find_elements(By.XPATH, f"//td[not(contains(@class, 'other'))]//*[text()='{target_date}']") or \
-                    driver.find_elements(By.XPATH, f"//a[text()='{target_date}']")
+            # 6. 날짜 선택 ([완벽 튜닝] 태희 님이 찾으신 <p class="day "> 태그 정밀 타격)
+            # 회색 가짜 날짜를 배제하고, 클래스에 'day'가 포함된 진짜 <p> 태그의 날짜를 조준합니다.
+            date_xpath = f"//td[not(contains(@class, 'other'))]//p[contains(@class, 'day') and text()='{target_date}']"
+            dates = driver.find_elements(By.XPATH, date_xpath)
             
+            # 2선 방어벽: 만약 p 태그 클릭이 안 먹힐 경우 td 칸 자체를 누르도록 설계
+            if not dates:
+                dates = driver.find_elements(By.XPATH, f"//td[not(contains(@class, 'other')) and descendant::p[text()='{target_date}']]")
+
             if dates:
-                # 활성화된 달력 판에서 가장 정확한 날짜 버튼을 타격합니다.
+                # 활성화된 6월 판에서 진짜 12일 칸을 꾹 누릅니다.
                 driver.execute_script("arguments[0].click();", dates[-1])
                 time.sleep(5) 
                 
