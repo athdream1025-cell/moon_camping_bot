@@ -22,7 +22,7 @@ st.set_page_config(page_title="울주 캠핑 비서 Pro", page_icon="🏕️")
 st.title("🏕️ 울주 캠핑 예약 비서 Pro")
 
 month_option = st.radio("감시할 월 선택", ["이번 달", "다음 달 (6월)"], horizontal=True)
-target_date = st.text_input("감시할 날짜 입력 (예: 29)", value="29")
+target_date = st.text_input("감시할 날짜 입력 (예: 12)", value="12")
 
 if "run" not in st.session_state:
     st.session_state.run = False
@@ -39,7 +39,7 @@ with col2:
 log_area = st.empty()
 
 if st.session_state.run:
-    log_area.info(f"🔄 [{month_option}] {target_date}일 상세 감시 중... (로딩 대기 보강)")
+    log_area.info(f"🔄 [{month_option}] {target_date}일 상세 감시 중... (사진 기반 튜닝)")
     
     options = Options()
     options.add_argument("--headless")
@@ -94,29 +94,34 @@ if st.session_state.run:
             for rb in rbs:
                 if "달빛" in rb.find_element(By.XPATH, "./..").text:
                     driver.execute_script("arguments[0].click();", rb)
-                    time.sleep(3) # 구역 선택 후 달력 기본 로딩 대기 시간 살짝 늘림
+                    time.sleep(3) 
                     try: driver.switch_to.alert.accept()
                     except: pass
                     break
 
-            # 5. 다음 달 선택 시 캘린더 조작 및 딜레이 보강
+            # 5. [수정] 사진 속 달력 우측 상단 '다음 달 이동 버튼' 정밀 조준
             if month_option == "다음 달 (6월)":
                 try:
-                    next_month_btn = driver.find_element(By.XPATH, "//a[contains(@class, 'ui-datepicker-next')]")
-                    driver.execute_script("arguments[0].click();", next_month_btn)
-                    time.sleep(4) # [핵심] 다음 달 달력이 완벽하게 렌더링될 때까지 4초간 뜸을 들입니다.
-                except:
-                    try:
-                        next_month_btn = driver.find_element(By.XPATH, "//a[span[contains(text(), '다음달')]]")
-                        driver.execute_script("arguments[0].click();", next_month_btn)
-                        time.sleep(4)
-                    except: pass
+                    # 사진 속 상단 우측 다음달 버튼 영역(행의 마지막 td 또는 버튼 클래스)을 직접 타격합니다.
+                    # 일반적인 텍스트 매칭이나 이미지 버튼 태그를 다각도로 잡도록 설계했습니다.
+                    next_month_btns = driver.find_elements(By.XPATH, "//img[contains(@src, 'next')]") or \
+                                      driver.find_elements(By.XPATH, "//button[contains(text(), '▶')]") or \
+                                      driver.find_elements(By.XPATH, "//*[contains(@class, 'next')]")
+                    if next_month_btns:
+                        driver.execute_script("arguments[0].click();", next_month_btns[-1])
+                    time.sleep(4) 
+                except: pass
 
-            # 6. 날짜 선택 (안전하게 마지막 날짜 버튼 타격)
-            dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
+            # 6. 날짜 선택 ([정밀 튜닝] 눈에 보이는 진짜 6월 달력 칸 안의 숫자만 타격)
+            # 회색 가짜 날짜(other-month)를 피하기 위해 정확히 유효한 일자 셀 안의 텍스트나 링크를 찾습니다.
+            dates = driver.find_elements(By.XPATH, f"//td[not(contains(@class, 'other'))]//a[text()='{target_date}']") or \
+                    driver.find_elements(By.XPATH, f"//td[not(contains(@class, 'other'))]//*[text()='{target_date}']") or \
+                    driver.find_elements(By.XPATH, f"//a[text()='{target_date}']")
+            
             if dates:
+                # 활성화된 달력 판에서 가장 정확한 날짜 버튼을 타격합니다.
                 driver.execute_script("arguments[0].click();", dates[-1])
-                time.sleep(5) # 날짜 클릭 후 하단 상세 현황판 표가 쫙 그려질 때까지 5초간 대기
+                time.sleep(5) 
                 
                 # 7. 상세 정보 수집 (사이트명 정밀 추출)
                 available_sites = []
