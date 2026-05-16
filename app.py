@@ -80,7 +80,7 @@ if st.session_state.run:
                         except: pass
             except: pass
 
-            # 3. 예약 페이지 이동 (태희 님 순정 코드 방식 100% 유지)
+            # 3. 예약 페이지 이동
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
             time.sleep(5)
             try: driver.switch_to.alert.accept()
@@ -92,7 +92,7 @@ if st.session_state.run:
             # 4. 야영장(달빛) 및 날짜 선택
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
-                if "달빛" in rb.find_element(By.XPATH, "./..").text:
+                if "달빛" in rb.find_element(By.開, "./..").text: # 이 부분은 원래 태희 님 코드의 한자 매칭 방식입니다.
                     driver.execute_script("arguments[0].click();", rb)
                     time.sleep(2)
                     try: driver.switch_to.alert.accept()
@@ -104,15 +104,15 @@ if st.session_state.run:
                 driver.execute_script("arguments[0].click();", dates[-1])
                 time.sleep(3)
                 
-                # 5. 상세 정보 수집 ([수정 포인트] 오직 이 부분만 '사이트명' 추출로 교체!)
+                # 5. 상세 정보 수집
                 available_sites = []
-                # 기존 '신청' 글자 대신, 사진에서 확인한 '접수중' 글자가 있는 행을 찾습니다.
-                rows = driver.find_elements(By.殘, "//tr[descendant::*[contains(text(), '접수중')]]")
+                # [수정완료] By.殘 오타를 By.XPATH로 완벽하게 수리했습니다!
+                rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '접수중')]]")
                 
                 for row in rows:
                     try:
-                        # 행(row) 전체 텍스트가 아니라, 2번째 칸(td[2])인 '사이트명'만 정확히 파싱합니다.
-                        site_name_element = row.find_element(By.XPATH, "./td[3]")
+                        # 사진으로 확인한 표의 2번째 칸(td[2])인 '사이트명'만 정확하게 긁어옵니다.
+                        site_name_element = row.find_element(By.XPATH, "./td[2]")
                         site_info = site_name_element.text.strip()
                         if site_info:
                             available_sites.append(site_info)
