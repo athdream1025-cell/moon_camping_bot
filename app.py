@@ -21,6 +21,8 @@ def send_telegram_msg(message):
 st.set_page_config(page_title="울주 캠핑 비서 Pro", page_icon="🏕️")
 st.title("🏕️ 울주 캠핑 예약 비서 Pro")
 
+# [UI 튜닝] 월 선택 스위치와 날짜 입력칸 배치
+month_option = st.radio("감시할 월 선택", ["이번 달", "다음 달 (6월)"], horizontal=True)
 target_date = st.text_input("감시할 날짜 입력 (예: 29)", value="29")
 
 if "run" not in st.session_state:
@@ -38,7 +40,7 @@ with col2:
 log_area = st.empty()
 
 if st.session_state.run:
-    log_area.info(f"🔄 {target_date}일 상세 감시 중... (팝업 자동 대응)")
+    log_area.info(f"🔄 [{month_option}] {target_date}일 상세 감시 중... (팝업 자동 대응)")
     
     options = Options()
     options.add_argument("--headless")
@@ -57,8 +59,7 @@ if st.session_state.run:
             # 1. 메인 접속 및 팝업 닫기
             driver.get("https://camping.ulju.ulsan.kr/index.jsp")
             time.sleep(3)
-            try:
-                driver.switch_to.alert.accept()
+            try: driver.switch_to.alert.accept()
             except: pass
 
             # 2. 로그인 수행
@@ -89,10 +90,9 @@ if st.session_state.run:
             if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 driver.switch_to.frame(0)
 
-            # 4. 야영장(달빛) 및 날짜 선택
+            # 4. 야영장(달빛) 선택
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
-                # [수정완료] By.開 오타를 원래 부품인 By.XPATH로 완벽하게 복구했습니다!
                 if "달빛" in rb.find_element(By.XPATH, "./..").text:
                     driver.execute_script("arguments[0].click();", rb)
                     time.sleep(2)
@@ -100,29 +100,42 @@ if st.session_state.run:
                     except: pass
                     break
 
+            # [새 부품] 5. 화면에서 '다음 달'을 선택했을 경우, 달력의 다음 달 버튼(>) 클릭
+            if month_option == "다음 달 (6월)":
+                try:
+                    # 울주캠핑장 달력의 다음달 이동 버튼 클래스(datepicker-next 등)를 찾아 클릭
+                    next_month_btn = driver.find_element(By.XPATH, "//a[contains(@class, 'ui-datepicker-next')]")
+                    driver.execute_script("arguments[0].click();", next_month_btn)
+                    time.sleep(2) # 달력 넘어가는 대기 시간
+                except:
+                    # 만약 위 코드가 안 먹힐 경우를 대비한 2선 방어용 텍스트 매칭
+                    try:
+                        next_month_btn = driver.find_element(By.XPATH, "//a[span[contains(text(), '다음달')]]")
+                        driver.execute_script("arguments[0].click();", next_month_btn)
+                        time.sleep(2)
+                    except: pass
+
+            # 6. 날짜 선택
             dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
             if dates:
                 driver.execute_script("arguments[0].click();", dates[-1])
                 time.sleep(3)
                 
-                # 5. 상세 정보 수집
+                # 7. 상세 정보 수집 (사이트명 정밀 추출 순정 버전)
                 available_sites = []
-                # 여기도 By.XPATH로 정상 작동 확인 완료했습니다.
                 rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '접수중')]]")
                 
                 for row in rows:
                     try:
-                        # 사진 속의 2번째 칸(td[2])인 '사이트명'만 쏙 뽑아옵니다.
                         site_name_element = row.find_element(By.XPATH, "./td[2]")
                         site_info = site_name_element.text.strip()
                         if site_info:
                             available_sites.append(site_info)
-                    except:
-                        continue
+                    except: continue
                 
                 if available_sites:
                     site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
-                    msg = (f"🔔 [빈자리 알림!]\n📅 날짜: {target_date}일\n"
+                    msg = (f"🔔 [빈자리 알림!]\n📅 날짜: {month_option} {target_date}일\n"
                            f"✅ 가능수: {len(available_sites)}개\n"
                            f"------------------\n"
                            f"{site_list_str}\n"
@@ -135,7 +148,7 @@ if st.session_state.run:
                     st.session_state.run = False
                     break
             
-            log_area.write(f"[{time.strftime('%H:%M:%S')}] {target_date}일 체크 중... 아직 없음")
+            log_area.write(f"[{time.strftime('%H:%M:%S')}] {month_option} {target_date}일 체크 중... 아직 없음")
             time.sleep(60)
             driver.refresh()
 
