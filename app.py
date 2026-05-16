@@ -1,342 +1,118 @@
 import streamlit as st
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.keys import Keys
 import time
+import requests
 import shutil
-import os
-from datetime import datetime
 
-# =========================
-# 환경설정
-# =========================
-os.environ['TZ'] = 'Asia/Seoul'
+# [설정] 안태희 님 정보
+TELEGRAM_TOKEN = "8739300740:AAH7xfPuMW8cdnDdzC48VpvQv68jgoJzSGY"
+CHAT_ID = "529787781"
 
-BOOKING_URL = "https://camping.ulju.ulsan.kr/ujcamping/campsite/booking"
+def send_telegram_msg(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    params = {"chat_id": CHAT_ID, "text": message}
+    try: requests.get(url, params=params)
+    except: pass
 
-# =========================
-# Streamlit UI
-# =========================
-st.set_page_config(
-    page_title="울주 캠핑 감시기",
-    page_icon="🏕️"
-)
+st.set_page_config(page_title="울주 캠핑 비서", page_icon="🏕️")
+st.title("🏕️ 울주 캠핑 예약 비서")
 
-st.title("🏕️ 울주 캠핑 예약 감시기")
-
-target_date = st.text_input(
-    "감시 날짜",
-    value="29"
-)
-
-target_year = "2026"
-target_month = "05"
+target_date = st.text_input("감시할 날짜 입력 (예: 29)", value="29")
 
 if "run" not in st.session_state:
     st.session_state.run = False
 
 col1, col2 = st.columns(2)
-
 with col1:
     if st.button("🚀 감시 시작"):
         st.session_state.run = True
-
 with col2:
-    if st.button("🛑 중단"):
+    if st.button("🛑 정지"):
         st.session_state.run = False
+        st.warning("감시를 중단합니다.")
 
 log_area = st.empty()
-image_area = st.empty()
 
-# =========================
-# 로그 함수
-# =========================
-def status(msg):
-
-    now = datetime.now().strftime('%H:%M:%S')
-
-    log_area.info(f"[{now}] {msg}")
-
-# =========================
-# 스크린샷
-# =========================
-def take_shot(driver, name):
-
-    filename = f"{name}.png"
-
-    try:
-
-        driver.save_screenshot(filename)
-
-        image_area.image(
-            filename,
-            caption=name
-        )
-
-    except Exception as e:
-
-        status(f"스크린샷 실패: {e}")
-
-# =========================
-# 드라이버 생성
-# =========================
-def create_driver():
-
+if st.session_state.run:
+    log_area.info(f"🔄 {target_date}일 빈자리 감시 시작...")
+    
     options = Options()
-
-    options.add_argument("--headless=new")
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-
-    options.add_argument("--window-size=1400,2200")
-
-    options.add_argument(
-        "user-agent=Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    )
-
-    options.add_experimental_option(
-        "excludeSwitches",
-        ["enable-automation"]
-    )
-
-    options.add_experimental_option(
-        "useAutomationExtension",
-        False
-    )
-
-    chrome_path = (
-        shutil.which("chromium")
-        or shutil.which("chromium-browser")
-    )
-
+    
+    # 서버에 설치된 크롬 경로 찾기
+    chrome_path = shutil.which("chromium") or shutil.which("chromium-browser")
     if chrome_path:
         options.binary_location = chrome_path
 
-    driver = webdriver.Chrome(options=options)
-
-    driver.set_page_load_timeout(60)
-
-    return driver
-
-# =========================
-# iframe 진입
-# =========================
-def enter_booking_iframe(driver):
-
-    status("🔍 iframe 탐색 중...")
-
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_all_elements_located(
-            (By.TAG_NAME, "iframe")
-        )
-    )
-
-    iframes = driver.find_elements(
-        By.TAG_NAME,
-        "iframe"
-    )
-
-    status(f"iframe 개수: {len(iframes)}")
-
-    for idx in range(len(iframes)):
-
-        try:
-
-            driver.switch_to.default_content()
-
-            driver.switch_to.frame(idx)
-
-            time.sleep(2)
-
-            html = driver.page_source
-
-            if "달빛" in html or "예약" in html:
-
-                status(f"✅ iframe 진입 성공 ({idx}번)")
-
-                return True
-
-        except Exception as e:
-
-            status(f"iframe {idx} 실패: {e}")
-
-    return False
-
-# =========================
-# 메인 루프
-# =========================
-if st.session_state.run:
-
-    while st.session_state.run:
-
-        driver = None
-
-        try:
-
-            driver = create_driver()
-
-            # -------------------------
-            # 메인 페이지 접속
-            # -------------------------
-            status("🌐 메인 페이지 접속")
-
-            driver.get(BOOKING_URL)
-
-            time.sleep(5)
-
-            # -------------------------
-            # 예약 시스템 진입
-            # -------------------------
-            status("🔑 예약 시스템 진입")
-
-            driver.execute_script(
-                "fn_move_page('01');"
-            )
-
-            time.sleep(5)
-
-            # -------------------------
-            # iframe 진입
-            # -------------------------
-            ok = enter_booking_iframe(driver)
-
-            if not ok:
-
-                status("❌ iframe 진입 실패")
-
-                take_shot(driver, "iframe_fail")
-
-                driver.quit()
-
-                time.sleep(30)
-
-                continue
-
-            take_shot(driver, "iframe_success")
-
-            # -------------------------
-            # 달빛야영장 선택
-            # -------------------------
-            status("🏕️ 달빛야영장 선택")
-
-            zone_btn = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable(
-                    (By.ID, "site_gubun_01")
-                )
-            )
-
-            driver.execute_script(
-                "arguments[0].click();",
-                zone_btn
-            )
-
-            time.sleep(5)
-
-            # -------------------------
-            # 날짜 선택 (핵심 수정)
-            # -------------------------
-            status(f"🎯 {target_date}일 JS 함수 실행 중...")
-
+    try:
+        # webdriver-manager 대신 셀레니움 4.x의 기본 드라이버 매니저 사용
+        driver = webdriver.Chrome(options=options)
+        
+        while st.session_state.run:
+            driver.get("https://camping.ulju.ulsan.kr/index.jsp")
+            time.sleep(3)
+            
+            # --- 로그인 로직 ---
             try:
+                driver.find_element(By.PARTIAL_LINK_TEXT, "로그인").click()
+                time.sleep(3)
+                login_inputs = driver.find_elements(By.CLASS_NAME, "inputLogin")
+                if len(login_inputs) >= 2:
+                    login_inputs[0].send_keys("athdream")
+                    login_inputs[1].send_keys("!raul3011o")
+                    login_inputs[1].send_keys(Keys.ENTER)
+                    time.sleep(3)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
+            except: pass
 
-                target_full_date = (
-                    f"{target_year}-{target_month}-"
-                    f"{target_date.zfill(2)}"
-                )
+            # --- 예약 확인 로직 ---
+            driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
+            time.sleep(5)
+            if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
+                driver.switch_to.frame(0)
 
-                status(f"대상 날짜: {target_full_date}")
+            # 야영장(달빛) 선택
+            rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            for rb in rbs:
+                if "달빛" in rb.find_element(By.XPATH, "./..").text:
+                    driver.execute_script("arguments[0].click();", rb)
+                    time.sleep(2)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
+                    break
 
-                # 사이트 내부 함수 직접 실행
-                driver.execute_script(
-                    f"newDateList('{target_full_date}',1);"
-                )
+            # 날짜 선택 및 신청 버튼 체크
+            dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
+            if dates:
+                driver.execute_script("arguments[0].click();", dates[-1])
+                time.sleep(3)
+                
+                apply_btns = driver.find_elements(By.XPATH, "//*[contains(text(), '신청')]")
+                active_list = [b for b in apply_btns if b.is_displayed()]
+                
+                if active_list:
+                    msg = f"🔔 [빈자리!] {target_date}일 예약 가능! 지금 바로 접속하세요!"
+                    send_telegram_msg(msg)
+                    st.balloons()
+                    log_area.success(msg)
+                    st.session_state.run = False
+                    break
+            
+            log_area.write(f"[{time.strftime('%H:%M:%S')}] {target_date}일 체크 중... 빈자리 없음")
+            time.sleep(60)
+            driver.refresh()
 
-                status("✅ newDateList 실행 완료")
-
-                time.sleep(5)
-
-                take_shot(driver, "date_clicked")
-
-            except Exception as e:
-
-                status(f"❌ 날짜 선택 실패: {e}")
-
-                take_shot(driver, "date_click_fail")
-
-                driver.quit()
-
-                time.sleep(30)
-
-                continue
-
-            # -------------------------
-            # 접수중 탐색
-            # -------------------------
-            status("🔍 접수중 자리 탐색 중...")
-
-            apply_buttons = driver.find_elements(
-                By.XPATH,
-                "//*[contains(text(),'접수중')]"
-            )
-
-            count = len(apply_buttons)
-
-            status(f"📈 접수중 자리 개수: {count}")
-
-            if count > 0:
-
-                status("🎉 빈자리 발견!")
-
-                take_shot(driver, "SUCCESS_OPEN")
-
-                st.success(
-                    f"{target_date}일 접수중 자리 발견!"
-                )
-
-                st.balloons()
-
-            else:
-
-                status("😴 아직 매진 상태")
-
-        except TimeoutException:
-
-            status("⏰ 요소 탐색 시간 초과")
-
-            if driver:
-                take_shot(driver, "timeout_error")
-
-        except Exception as e:
-
-            status(f"⚠️ 오류 발생: {e}")
-
-            if driver:
-                take_shot(driver, "error_report")
-
-        finally:
-
-            try:
-                if driver:
-                    driver.quit()
-            except:
-                pass
-
-        # -------------------------
-        # 다음 검사 대기
-        # -------------------------
-        status("💤 3분 대기")
-
-        for i in range(180):
-
-            if not st.session_state.run:
-                break
-
-            time.sleep(1)
+    except Exception as e:
+        st.error(f"⚠️ 오류 발생: {e}")
+        st.session_state.run = False
+    finally:
+        if 'driver' in locals():
+            driver.quit()
