@@ -92,7 +92,7 @@ if st.session_state.run:
             # 4. 야영장(달빛) 선택
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
-                if "달빛" in rb.find_element(By.開, "./..").text:
+                if "달빛" in rb.find_element(By.XPATH, "./..").text:
                     driver.execute_script("arguments[0].click();", rb)
                     time.sleep(3) # 구역 선택 후 달력 기본 로딩 대기 시간 살짝 늘림
                     try: driver.switch_to.alert.accept()
