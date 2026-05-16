@@ -38,7 +38,7 @@ with col2:
 log_area = st.empty()
 
 if st.session_state.run:
-    log_area.info(f"🔄 {target_date}일 상세 빈자리 감시 중...")
+    log_area.info(f"🔄 {target_date}일 상세 감시 중... (팝업 자동 대응)")
     
     options = Options()
     options.add_argument("--headless")
@@ -54,39 +54,63 @@ if st.session_state.run:
         driver = webdriver.Chrome(options=options)
         
         while st.session_state.run:
-            # --- 로그인 및 페이지 이동 (생략, 기존과 동일) ---
+            # 1. 메인 접속 및 팝업 닫기
             driver.get("https://camping.ulju.ulsan.kr/index.jsp")
-            time.sleep(2)
-            # (로그인 로직 생략... 안태희 님 기존 코드 사용)
+            time.sleep(3)
+            try:
+                driver.switch_to.alert.accept()
+            except: pass
 
+            # 2. 로그인 수행
+            try:
+                login_btn = driver.find_elements(By.PARTIAL_LINK_TEXT, "로그인")
+                if login_btn:
+                    login_btn[0].click()
+                    time.sleep(3)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
+                    
+                    inputs = driver.find_elements(By.CLASS_NAME, "inputLogin")
+                    if len(inputs) >= 2:
+                        inputs[0].send_keys("athdream")
+                        inputs[1].send_keys("!raul3011o")
+                        inputs[1].send_keys(Keys.ENTER)
+                        time.sleep(3)
+                        try: driver.switch_to.alert.accept()
+                        except: pass
+            except: pass
+
+            # 3. 예약 페이지 이동
             driver.get("https://camping.ulju.ulsan.kr/ujcamping/campsite/booking")
-            time.sleep(4)
+            time.sleep(5)
+            try: driver.switch_to.alert.accept()
+            except: pass
+            
             if len(driver.find_elements(By.TAG_NAME, "iframe")) > 0:
                 driver.switch_to.frame(0)
 
-            # 달빛야영장 클릭
+            # 4. 야영장(달빛) 및 날짜 선택
             rbs = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
             for rb in rbs:
                 if "달빛" in rb.find_element(By.XPATH, "./..").text:
                     driver.execute_script("arguments[0].click();", rb)
                     time.sleep(2)
+                    try: driver.switch_to.alert.accept()
+                    except: pass
                     break
 
-            # 날짜 클릭
             dates = driver.find_elements(By.XPATH, f"//*[text()='{target_date}']")
             if dates:
                 driver.execute_script("arguments[0].click();", dates[-1])
                 time.sleep(3)
                 
-                # --- 여기서부터 상세 정보 추출 ---
+                # 5. 상세 정보 수집
                 available_sites = []
-                # '신청' 버튼이 있는 모든 행(tr)을 찾습니다.
                 rows = driver.find_elements(By.XPATH, "//tr[descendant::*[contains(text(), '신청')]]")
                 
                 for row in rows:
-                    # 해당 줄에서 야영장 이름(보통 첫 번째나 두 번째 td)을 가져옵니다.
-                    site_name = row.text.split('\n')[0] 
-                    available_sites.append(site_name)
+                    site_info = row.text.split('\n')[0]
+                    available_sites.append(site_info)
                 
                 if available_sites:
                     site_list_str = "\n".join([f"📍 {site}" for site in available_sites])
@@ -108,6 +132,8 @@ if st.session_state.run:
             driver.refresh()
 
     except Exception as e:
-        st.error(f"오류: {e}")
+        st.error(f"⚠️ 오류 발생: {e}")
+        st.session_state.run = False
     finally:
-        if 'driver' in locals(): driver.quit()
+        if 'driver' in locals():
+            driver.quit()
